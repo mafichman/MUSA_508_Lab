@@ -263,6 +263,8 @@ final_net <-
 
 using {spdep} package to to build neighborhood weights and list to calculate local Moran's I.
 
+Note that the code here is *different* than in the book - it has been updated to keep up with changes in packages.
+
 > What is the difference between local and global Moran's I?
 
 A little in depth version of the chunk below can be found:
@@ -396,6 +398,8 @@ error_by_reg_and_fold %>%
 ## Density vs predictions
 
 The `spatstat` function gets us kernal density estimates with varying search radii.
+
+Note that the code here is *different* than in the book - it has been updated to keep up with changes in packages.
 
 ```{r}
 # demo of kernel width
