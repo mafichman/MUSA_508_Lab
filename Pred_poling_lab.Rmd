@@ -29,7 +29,9 @@ source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-L
 
 ## Read in Data from Chicago
 
-This uses the Socrata package for some data sets
+This uses the Socrata package for some data sets.
+
+Note where we bring in burglary data - you will want to vary this part to do your homework!
 
 ```{r}
 policeDistricts <- 
@@ -94,6 +96,8 @@ ggplot() +
 > What is a fishnet grid?
 
 The `{sf}` package offers really easy way to create fishnet grids.
+
+Examine the fishnet - the unique ID is crucial to building a data set!
 
 ```{r}
 ## using {sf} to create the grid
@@ -272,7 +276,7 @@ final_net.nb <- poly2nb(as_Spatial(final_net), queen=TRUE)
 ## ... and neighborhoods to list of weigths
 final_net.weights <- nb2listw(final_net.nb, style="W", zero.policy=TRUE)
 
-print(final_net.weights, zero.policy=TRUE)
+# print(final_net.weights, zero.policy=TRUE)
 ```
 
 ```{r}
@@ -293,6 +297,8 @@ final_net.localMorans <-
 ```
 
 ### Plotting local Moran's I results
+
+This is a complex code chunk - it's a loop which builds ggplots of local Moran's for each of your `vars`
 
 > What does a significant hot spot tell us about the distribution of burglaries?
 
@@ -388,6 +394,8 @@ error_by_reg_and_fold %>%
 ```
 
 ## Density vs predictions
+
+The `spatstat` function gets us kernal density estimates with varying search radii.
 
 ```{r}
 # demo of kernel width
