@@ -5,6 +5,8 @@ date: "10/22/2021"
 output: html_document
 ---
 
+We are going to run through the code base with just a couple variables in a model - in a slightly simplified workflow
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
 
@@ -438,6 +440,8 @@ as.data.frame(burg_KD.1000) %>%
 
 ## Get 2018 crime data
 
+Let's see how our model performed relative to KD on the following year's data.
+
 ```{r}
 burglaries18 <- 
   read.socrata("https://data.cityofchicago.org/Public-Safety/Crimes-2018/3i3m-jwuy") %>% 
@@ -473,6 +477,8 @@ burg_KDE_sf <- as.data.frame(burg_KD.1000) %>%
   dplyr::select(label, Risk_Category, burgCount)
 ```
 
+Note that this is different from the book, where we pull a model out of a list of models we've created. For your homework, you'll be creating multiple models.
+
 ```{r}
 burg_risk_sf <-
   reg.ss.spatialCV %>%
@@ -490,6 +496,8 @@ burg_risk_sf <-
       mutate(burgCount = replace_na(burgCount, 0))) %>%
   dplyr::select(label,Risk_Category, burgCount)
 ```
+
+We don't do quite as well because we don't have very many features, but still pretty good.
 
 ```{r}
 rbind(burg_KDE_sf, burg_risk_sf) %>%
