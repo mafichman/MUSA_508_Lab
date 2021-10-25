@@ -1,0 +1,409 @@
+---
+title: "People Based ML - Serving Facebook Ads"
+author: "Michael Fichman & Ken Steif"
+date: "October 16, 2020"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+# Use Case
+
+Your digital marketing agency is tasked with targeting Facebook users with an ad for a discount fashion brand. To test out a new advertising strategy, you serve an ad to 1000 randomly selected users and see who clicks. You are going to build a model based on their behavior (click or no click) and some attributes about them. We will try to describe and evaluate that model in the context of your business process.
+
+You will run through this code with a group (during live lab), or individually (if watching it recorded).
+
+**At various points, there are prompts for you to fill out - those are in bold text.  Keep a log of your answers - we will compare notes during or at the end of class.**
+
+There is a more complex code base in the class textbook which forms the basis for your homework assignment - a cost/benefit problem involving subscriptions and mail vouchers - a more complex balance sheet. The code in this markdown is only lightly annotated. The textbook has a full annotation of the code and describes the details of logistic regression, goodness of fit metrics and more. This workshop mostly just deals with the process and interpretation.
+
+# Set Up
+
+Install libraries and load the data set `advertising`.
+
+These data come from a [Kaggle ML example data set]("https://www.kaggle.com/faressayah/logistic-regression-tutorial-predict-ad-click?select=advertising.csv") and are somewhat edited and contain added noise.
+
+```{r load_packages, warning = FALSE}
+options(scipen=10000000)
+
+library(tidyverse)
+library(kableExtra)
+library(caret)
+library(knitr) 
+library(pscl)
+library(plotROC)
+library(pROC)
+library(lubridate)
+```
+
+```{r load_data, cache = TRUE}
+palette5 <- c("#981FAC","#CB0F8B","#FF006A","#FE4C35","#FE9900")
+palette4 <- c("#981FAC","#FF006A","#FE4C35","#FE9900")
+palette2 <- c("#981FAC","#FF006A")
+
+
+advertising <- read.csv("~/GitHub/MUSA_508_Lab/Week_7/advertising_clean.csv")
+
+```
+
+# Data Exploration
+
+Use the `glimpse` command to check out your data set.
+
+Make some plots of our variables - both continuous and categorical. Examine these plots and then jot down your observations to discussion prompt 1.
+
+## Discussion 1:
+
+**What are some of the average characteristics of people who click on this ad?** 
+
+**What are some of the ways in which clickers and non-clickers are different?**
+
+```{r exploratory_continuous}
+advertising %>%
+  dplyr::select(click,Area_Income, Time_On_FB, Daily_Internet_Usage, Age) %>%
+  gather(Variable, value, -click) %>%
+    ggplot(aes(click, value, fill=click)) + 
+      geom_bar(position = "dodge", stat = "summary", fun.y = "mean") + 
+      facet_wrap(~Variable, scales = "free") +
+      scale_fill_manual(values = palette2) +
+      labs(x="Click", y="Value", 
+           title = "Feature associations with the likelihood of click",
+           subtitle = "(continous outcomes)") +
+      theme(legend.position = "none")
+```
+
+```{r exploratory_continuous_density, message = FALSE, warning = FALSE}
+advertising %>%
+    dplyr::select(click,Area_Income, Time_On_FB, Daily_Internet_Usage, Age) %>%
+    gather(Variable, value, -click) %>%
+    ggplot() + 
+    geom_density(aes(value, color=click), fill = "transparent") + 
+    facet_wrap(~Variable, scales = "free") +
+    scale_fill_manual(values = palette2) +
+    labs(title = "Feature distributions click vs. no click",
+         subtitle = "(continous outcomes)") +
+    theme(legend.position = "none")
+```
+
+```{r exploratory_binary, message = FALSE, warning = FALSE}
+advertising %>%
+    dplyr::select(click, Male, Fashion_FB_Group) %>%
+    gather(Variable, value, -click) %>%
+    count(Variable, value, click) %>%
+      ggplot(., aes(value, n, fill = click)) +   
+        geom_bar(position = "dodge", stat="identity") +
+        facet_wrap(~Variable, scales="free") +
+        scale_fill_manual(values = palette2) +
+        labs(x="Click", y="Value",
+             title = "Feature associations with the likelihood of click",
+             subtitle = "Categorical features") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Variable Transformations
+
+We have tons of countries in our data set. Most have only a handful of observations. I create a "click average" for each country to use a continuous instead of categorical variable.
+
+I also create a `userTimeFrame` variable to see if the time of day the user is viewing the ad has some kind of effect.
+
+```{r country_variables, cache = TRUE}
+
+advertising <- 
+  advertising %>% 
+  group_by(Country) %>% 
+  summarize(totClicks = sum(clickNumeric), 
+            n = n(), 
+            nationalClickAvg = 100*(totClicks/n)) %>%
+  dplyr::select(-n, -totClicks) %>%
+  right_join(advertising, .) %>%
+  mutate(Timestamp = mdy_hm(Timestamp),
+         userTimeFrame = case_when(hour(Timestamp) < 6  ~ "NIGHT",
+                                   hour(Timestamp) >= 6 & hour(Timestamp) <= 10  ~ "AM",
+                                   hour(Timestamp) >= 10 & hour(Timestamp) < 17  ~ "WORKDAY",
+                                   hour(Timestamp) >= 17  ~ "EVENING"))
+
+```
+
+# Create A Logistic Regression Model
+
+A logistic regression model predicts a binary outcome - a `1` or a `0` - a `Click` or a `No Click` and associates a coefficient that describes the change in the probability of the outcome given some change in the independent variable. As I mentioned earlier, for a more detailed discussion of logistic regression, consult the text book.
+
+We partition our data into a 50/50 training and test set (`p = 0.50`). We call these sets `advertisingTrain` and `advertisingTest`.
+
+```{r create_partition}
+set.seed(3456)
+trainIndex <- createDataPartition(advertising$click, p = .50,
+                                  list = FALSE,
+                                  times = 1)
+advertisingTrain <- advertising[ trainIndex,]
+advertisingTest  <- advertising[-trainIndex,]
+
+```
+
+We run our model with the dependent variable `clickNumeric` and we use most of our variables in the regression. (See `dplyr::select`).
+
+```{r run_model}
+
+advertisingModel <- glm(clickNumeric ~ .,
+                  data=advertisingTrain %>% 
+                    dplyr::select(-Country, -Timestamp, -click),
+                  family="binomial" (link="logit"))
+
+summary(advertisingModel)
+
+```
+
+## Discussion 3
+
+Observe the output of the first model, and **using the code chunk below play around with the variables you decide to include and exclude. Run the model, and then the subsequent line of code which produces goodness of fit metrics.** How is your McFadden R-squared? It's kind of a pseudo-R-squared, not quite interpretable like R-squared for `lm` models. But the closer to 1, generally the better.
+
+
+```{r second_model}
+advertisingModel <- glm(clickNumeric ~ .,
+                  data=advertisingTrain %>% dplyr::select(-Country, -Timestamp, -click, -userTimeFrame,
+                                                          -Fashion_FB_Group),
+                  family="binomial" (link="logit"))
+
+summary(advertisingModel)
+
+```
+
+```{r fit_metrics}
+
+pR2(advertisingModel)
+
+```
+
+# Make Predictions
+
+We create a dataframe of predictions for the 500 observations in our test set, called `testProbs`.
+
+These predictions are the estimated probabilities of clicking for these out-of-sample subjects. We can compare them to the observed outcome.
+
+Run the code below and explore using `glimpse(testProbs)` to see what these predictions look like.
+
+```{r testProbs}
+
+testProbs <- data.frame(Outcome = as.factor(advertisingTest$clickNumeric),
+                        Probs = predict(advertisingModel, advertisingTest, type= "response"))
+```
+
+## Discussion 3
+
+Look at the plot of our predicted probabilities for our observed clickers (`1`) and non-clickers (`0`). **Write a sentence or two about how you think our model is performing.**
+
+```{r plot_testProbs}
+ggplot(testProbs, aes(x = Probs, fill = as.factor(Outcome))) + 
+  geom_density() +
+  facet_grid(Outcome ~ .) +
+  scale_fill_manual(values = palette2) +
+  labs(x = "Click", y = "Density of probabilities",
+       title = "Distribution of predicted probabilities by observed outcome") +
+  theme(strip.text.x = element_text(size = 18),
+        legend.position = "none")
+```
+
+# Confusion Matrix
+
+Each threshold (e.g. a probability above which a prediction is a "click" and below which it's a "no click") has it's own rate of error. These errors can be classified in four ways for a binary model. 
+
+A "confusion matrix" for the threshold of 50% shows us the rate at which we got True Positives (aka Sensitivity), False Positives, True Negatives (aka Specificity) and False Negatives for that threshold.
+
+```{r thresholds}
+testProbs <- 
+  testProbs %>%
+  mutate(predOutcome  = as.factor(ifelse(testProbs$Probs > 0.5 , 1, 0)))
+```
+
+```{r confusion_matrix}
+caret::confusionMatrix(testProbs$predOutcome, testProbs$Outcome, 
+                       positive = "1")
+
+```
+
+## Discussion 4
+
+**Describe what each of the following mean in the context of our advertising use case:**
+
+**True Positive:** We predicted a click and it was a click IRL
+
+**False Positive:**
+
+**True Negative:**
+
+**False Negative:**
+
+# ROC Curve
+
+The ROC curve, gives us another visual "goodness of fit" metric. One that is a bit more tricky. You want to have a curve that is "above" the y=x line, which is where your prediction rates for positives and negatives are "no better than a coin flip". If it's too "square" - you are probably over fit.  The Area-Under-The-Curve or "AUC" calculation below will help guide your understanding of the ROC curve
+
+```{r auc, message = FALSE, warning = FALSE}
+auc(testProbs$Outcome, testProbs$Probs)
+```
+
+```{r roc_curve, warning = FALSE, message = FALSE}
+ggplot(testProbs, aes(d = as.numeric(testProbs$Outcome), m = Probs)) +
+  geom_roc(n.cuts = 50, labels = FALSE, colour = "#FE9900") +
+  style_roc(theme = theme_grey) +
+  geom_abline(slope = 1, intercept = 0, size = 1.5, color = 'grey') +
+  labs(title = "ROC Curve - clickModel")
+```
+
+## Discussion 5
+
+Try to come up with an explanation of what this ROC curve in 1-2 sentences.
+
+Is it useful? Is it overfit? What does the y=x line represent?
+
+# Cross validation
+
+We run 100-fold cross validation and look at the ROC (aka AUC), Sensitivity and Specificity across this series of predicitons. How do they look? 
+
+Probably pretty, pretty good.
+
+```{r cv}
+ctrl <- trainControl(method = "cv", number = 100, classProbs=TRUE, summaryFunction=twoClassSummary)
+
+cvFit <- train(click ~ .,
+                  data=advertising %>% 
+                    dplyr::select(-Country, -Timestamp, -clickNumeric, 
+                                  -userTimeFrame, -Fashion_FB_Group), 
+                method="glm", family="binomial",
+                metric="ROC", trControl = ctrl)
+
+cvFit
+```
+
+```{r goodness_metrics, message = FALSE, warning = FALSE}
+dplyr::select(cvFit$resample, -Resample) %>%
+  gather(metric, value) %>%
+  left_join(gather(cvFit$results[2:4], metric, mean)) %>%
+  ggplot(aes(value)) + 
+    geom_histogram(bins=35, fill = "#FF006A") +
+    facet_wrap(~metric) +
+    geom_vline(aes(xintercept = mean), colour = "#981FAC", linetype = 3, size = 1.5) +
+    scale_x_continuous(limits = c(0, 1)) +
+    labs(x="Goodness of Fit", y="Count", title="CV Goodness of Fit Metrics",
+         subtitle = "Across-fold mean reprented as dotted lines")
+
+```
+
+# Cost-Benefit Calculation
+
+This has all been building to an examination of the model in the context of our ad campaign. Let's set this up to estimate the revenues associated with using this model under the following scenario:
+
+-An impression (serving an ad) costs $0.10
+
+-A click brings an estimated $0.35 of revenue per visitor on average.
+
+## Discussion 6
+
+Run the code below and look at the revenues associated with each prediction type. (Notice our `Revenue` calculation - for your assignment this will more closely resemble the calculation in the text book).
+
+**What is the rate of return per dollar spent?** 
+
+A clue to figuring this out - we only spend money for impressions on True Positives and False Positives, and we lost money with our False Negatives - hypothetically we spend nothing on True Negatives.
+
+**Are there particular types of error which are more damaging? What outcomes do we want to maximize or minimize? Why do we look at False Negatives as a negative cost?**
+
+```{r cost_benefit}
+cost_benefit_table <-
+   testProbs %>%
+      count(predOutcome, Outcome) %>%
+      summarize(True_Negative = sum(n[predOutcome==0 & Outcome==0]),
+                True_Positive = sum(n[predOutcome==1 & Outcome==1]),
+                False_Negative = sum(n[predOutcome==0 & Outcome==1]),
+                False_Positive = sum(n[predOutcome==1 & Outcome==0])) %>%
+       gather(Variable, Count) %>%
+       mutate(Revenue =
+               ifelse(Variable == "True_Negative", Count * 0,
+               ifelse(Variable == "True_Positive",((.35 - .1) * Count),
+               ifelse(Variable == "False_Negative", (-0.35) * Count,
+               ifelse(Variable == "False_Positive", (-0.1) * Count, 0))))) %>%
+    bind_cols(data.frame(Description = c(
+              "We correctly predicted no click",
+              "We correctly predicted a click",
+              "We predicted no click and customer clicked",
+              "We predicted a click and customer did not click")))
+
+kable(cost_benefit_table,
+       caption = "Cost/Benefit Table") %>% kable_styling()
+```
+
+# Optimize Thresholds
+
+The last step to tuning our model is to run it for each threshold value. Recall that we chose 0.5 as the line above which a prediction is classified as a "click".  We can then look at the confusion matrices for each threshold and choose the one that returns the most revenue.
+
+The code below bakes in our cost-revenue calculations.
+
+## Discussion 7
+
+**Consider how revenues compare to a situation in which we had no model (e.g. served adds to all 1000 in the sample) or one in which we don't tune the threshold.**
+
+```{r iterate_threshold}
+iterateThresholds <- function(data) {
+  x = .01
+  all_prediction <- data.frame()
+  while (x <= 1) {
+  
+  this_prediction <-
+      testProbs %>%
+      mutate(predOutcome = ifelse(Probs > x, 1, 0)) %>%
+      count(predOutcome, Outcome) %>%
+      summarize(True_Negative = sum(n[predOutcome==0 & Outcome==0]),
+                True_Positive = sum(n[predOutcome==1 & Outcome==1]),
+                False_Negative = sum(n[predOutcome==0 & Outcome==1]),
+                False_Positive = sum(n[predOutcome==1 & Outcome==0])) %>%
+     gather(Variable, Count) %>%
+     mutate(Revenue =
+               ifelse(Variable == "True_Negative", Count * 0,
+               ifelse(Variable == "True_Positive",((.35 - .1) * Count),
+               ifelse(Variable == "False_Negative", (-0.35) * Count,
+               ifelse(Variable == "False_Positive", (-0.1) * Count, 0)))),
+            Threshold = x)
+  
+  all_prediction <- rbind(all_prediction, this_prediction)
+  x <- x + .01
+  }
+return(all_prediction)
+}
+```
+
+
+```{r revenue_model}
+whichThreshold <- iterateThresholds(testProbs2)
+
+whichThreshold_revenue <- 
+whichThreshold %>% 
+    group_by(Threshold) %>% 
+    summarize(Revenue = sum(Revenue))
+
+  ggplot(whichThreshold_revenue)+
+  geom_line(aes(x = Threshold, y = Revenue))+
+  geom_vline(xintercept =  pull(arrange(whichThreshold_revenue, -Revenue)[1,1]))+
+    labs(title = "Model Revenues By Threshold For Test Sample",
+         subtitle = "Vertical Line Denotes Optimal Threshold")
+
+```
+
+## Post-Script - Interpreting Logit Coefficients
+
+**Explaining the values of the coefficients:**
+
+The coefficients in the model are "log odds" of the outcome happening. Use the `exp()` function to exponentiate a coefficient and produce an 'odds ratio' relative to a value of 1.
+
+Examples:
+
+A fixed effect coefficient which exponentiates to a value of, say `0.25` would be explained as follows:
+
+"All else equal, a person having 'characteristic X' reduces the likelihood of clicking by 75%."
+
+For continuous variables the coefficients are interpreted as having a unit increase in the independent variable increase the likelihood of clicking by some percentage.
+
+For more on the coefficients associated with logistic regression, [read here]("https://rpubs.com/OmaymaS/182726").
