@@ -257,7 +257,7 @@ ggplot(testProbs, aes(d = as.numeric(testProbs$Outcome), m = Probs)) +
 
 ## Discussion 5
 
-Try to come up with an explanation of what this ROC curve in 1-2 sentences.
+Try to come up with an explanation of what this ROC curve is "saying" in 1-2 sentences.
 
 Is it useful? Is it overfit? What does the y=x line represent?
 
