@@ -34,7 +34,7 @@ options(scipen=10000000)
 
 library(tidyverse)
 library(kableExtra)
-library(caret)
+library(caret)g
 library(knitr) 
 library(pscl)
 library(plotROC)
@@ -87,8 +87,7 @@ advertising %>%
     facet_wrap(~Variable, scales = "free") +
     scale_fill_manual(values = palette2) +
     labs(title = "Feature distributions click vs. no click",
-         subtitle = "(continous outcomes)") +
-    theme(legend.position = "none")
+         subtitle = "(continous outcomes)")
 ```
 
 ```{r exploratory_binary, message = FALSE, warning = FALSE}
