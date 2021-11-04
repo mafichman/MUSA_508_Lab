@@ -34,7 +34,7 @@ options(scipen=10000000)
 
 library(tidyverse)
 library(kableExtra)
-library(caret)g
+library(caret)
 library(knitr) 
 library(pscl)
 library(plotROC)
@@ -151,7 +151,7 @@ We run our model with the dependent variable `clickNumeric` and we use most of o
 
 advertisingModel <- glm(clickNumeric ~ .,
                   data=advertisingTrain %>% 
-                    dplyr::select(-Country, -Timestamp, -click),
+                    dplyr::select(-Country, -Timestamp, -userTimeFrame, -click),
                   family="binomial" (link="logit"))
 
 summary(advertisingModel)
