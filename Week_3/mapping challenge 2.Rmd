@@ -1,0 +1,40 @@
+---
+title: "Mapping Challenge 2"
+author: "Michael Fichman"
+date: "September 24, 2021"
+output: html_document
+---
+
+This is just code to add to the lab rmd if there is time to do a second mapping challenge - copy and paste it into the end of your other rmd.
+
+# Mapping Challenge 2
+
+.... if time allows...
+
+Download Lancaster County Data from the US Census and notice that we find the area in square feet (which is the linear unit of our projection).
+
+Take that and turn it into a measure of persons per square mile.
+
+```{r tracts17}
+tracts17 <- 
+  get_acs(geography = "tract", variables = c("B25026_001E","B25058_001E"), 
+          year=2017, state=42, county="Lancaster", geometry=T, output="wide") %>%
+  st_transform('ESRI:102728') %>%
+  rename(TotalPop = B25026_001E, 
+         MedRent = B25058_001E) %>%
+  dplyr::select(-NAME, -starts_with("B")) %>%
+  mutate(area_sqFt = (as.numeric(st_area(.))))
+```
+
+Do a centroid join to keep just the tracts inside the UGB - OR - figure out a way to just keep tracts that intersect the UGB (see the code from the TOD chapter).
+
+```{r insideTracts}
+insideTracts <- st_centroid(tracts17)[studyAreaTowns,] %>%
+  st_drop_geometry() %>%
+  left_join(dplyr::select(tracts17, GEOID)) %>%
+  st_sf()
+```
+
+Make a map of population density in Lancaster - either within the UGB, or as it relates to proximity to the UGB, or at the county level generally. Do you want to use the quartile functions from last week? If so, you need to add those as chunks in your markdown and run them.
+
+Put that map in a code chunk and render it in a markdown that knits correctly and doesn't have wacky messages and warnings.

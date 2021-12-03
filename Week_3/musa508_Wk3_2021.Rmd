@@ -1,0 +1,169 @@
+---
+title: "MUSA 508 Lab 3"
+author: "Michael Fichman"
+date: "September, 2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+# Introduction
+
+Today's lab will use some of the Chapter 3 data from Ken Steif's book (the Lancaster County UGB) as material for making maps using `ggplot` and `sf`.
+
+After uploading the data, we will do some geoprocessing using SF, and then you will undertake two data visualization exercises.
+
+This .rmd document will then be the basis for you to "knit" your own Markdown HTML document, which is the presentation format for your homeworks due next week.
+
+# Setup
+
+Set up the Markdown parameters and load your libraries. If you don't have any of the following 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen=999)
+
+
+library(tidyverse)
+library(tidycensus)
+library(sf)
+library(gridExtra)
+library(grid)
+library(knitr)
+library(kableExtra)
+library(rmarkdown)
+```
+
+## Load Themes
+
+Create your mapping and plotting themes.
+
+Add to these and create color palettes if you please!
+
+```{r load_themes}
+# Load functions
+
+root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
+
+```
+
+## Load Census API Key
+
+```{r load_api_key, message=FALSE, warning=FALSE}
+census_api_key("YOUR API KEY", overwrite = TRUE)
+```
+
+# Load the data
+
+First step is to clone the repo for the lab 3 data (using github desktop) so we have the data.
+
+You can clone the repo using the "file" tab in Github Desktop and using [this URL:](https://github.com/urbanSpatial/Public-Policy-Analytics-Landing)
+
+
+[Learn more about embedding links and using bold and italics in markdown here](https://rmarkdown.rstudio.com/authoring_basics.html)
+
+## Read in the data
+
+Notice that this code is a bit different from that in the text. The filepath in the github data is a bit different. Yours will look different too depending on where the data were cloned to (probably your GitHub folder).
+
+```{r load_data, message = FALSE}
+lancCounty <- st_read("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/Chapter2/LancasterCountyBoundary.geojson") %>%
+  st_transform('ESRI:102728')
+
+uga <- st_read("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/Chapter2/Urban_Growth_Boundary.geojson") %>% 
+  st_transform('ESRI:102728')     
+
+studyAreaTowns <- st_read("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/Chapter2/StudyAreaTowns.geojson") %>%
+  st_transform('ESRI:102728')    
+
+buildings <- st_read("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/Chapter2/LancasterCountyBuildings.geojson") %>% st_transform('ESRI:102728')    
+
+greenSpace <- st_read("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/Chapter2/LancasterGreenSpace.geojson") %>% st_transform('ESRI:102728')
+```
+
+## Exploring our spatial data
+
+Let's explore these data sets by using commands like `glimpse()`
+
+What do you find? What kind of data are these?
+
+Make some simple ggplots with `geom_sf` by mapping the municipalities, the Lancaster County Boundary and the UGA and put them in a chunk right here:
+
+```{r first_maps}
+ggplot()+
+  geom_sf(data = studyAreaTowns, aes(fill = MUNI))+
+  geom_sf(data = uga, fill = "transparent", color = "red")+
+  mapTheme()
+```
+
+# Geoprocessing
+
+We are going to do some meat-and-potatoes vector GIS - union and buffer.
+
+## Union
+
+Merging all the shapes (the `st_buffer(1)` just consolidates fragmented geometries)
+
+
+```{r union}
+uga_union <- 
+  st_union(uga) %>%
+  st_buffer(1) %>%
+  st_sf()
+```
+
+
+## Outside and inside buffers
+
+We create our `outsideBuffer`, our `insideBuffer` and then we `rbind` the buffers together.
+
+What is `rbind` doing? What are the conditions that allow it to work?
+
+```{r buffers}
+outsideBuffer <-
+  st_buffer(uga_union, 660) %>%
+  st_difference(uga_union) %>%
+  mutate(Legend = "Outside")
+
+
+insideBuffer <- 
+  st_buffer(uga_union, dist = -660) %>%
+  st_difference(uga_union, .) %>%
+  mutate(Legend = "Inside")
+
+bothBuffers <- rbind(insideBuffer, outsideBuffer)
+```
+
+# Map the buffers
+
+Here is a basic plot of the buggers that we have created.
+
+```{r buffer_plot}
+ggplot() + 
+  geom_sf(data = bothBuffers, aes(fill = Legend)) +
+  scale_fill_manual(values = c("#F8766D", "#00BFC4")) + 
+  labs(title = "1/8mi buffer inside & outside UGA") +
+  mapTheme()
+```
+
+# Join the Town info to the buffers
+
+```{r buffersAndTowns}
+buffersAndTowns <- 
+  st_intersection(st_make_valid(studyAreaTowns), bothBuffers) %>%
+  filter(MUNI != "MOUNTVILLE BOROUGH")
+```
+
+# Mapping Challenge 1
+
+Find a way to map the inside and outside buffers nicely that distinguishes them from each other AND shows the municipalities they belong to. Try manipulating the colors (remember our palettes, and the `viridis` package? remember `scale_fill_manual`). Add geographic context. Add legends and titles and subtitles.
+
+Consider how you might label objects in your map using
+
+`geom_sf_text(data = studyAreaTowns, aes(label = MUNI), size = 3)`
+
+Think about ways to manipulate the `studyAreaTowns` data inside that text geom to make it more legible.
+
+Put all this code into a markdown chunk that runs correctly and allows this markdown to `knit`. Then see if you can manipulate the chunk options so that there aren't annoying warnings and other messages you don't want showing up in an assignment.

@@ -1,0 +1,299 @@
+---
+title: "MUSA 508, Lab 4 - Spatial Machine Learning Pt. 1"
+author: "Steif, Harris, Fichman - 2020/21"
+output: html_document
+---
+
+# Big Section Header
+
+You can put some text under the header
+
+## Little Section Header
+
+You can put some text under the header
+
+```{r setup, include=FALSE}
+
+# You can set some global options for knitting chunks
+
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load some libraries
+
+library(tidyverse)
+library(sf)
+library(spdep)
+library(caret)
+library(ckanr)
+library(FNN)
+library(grid)
+library(gridExtra)
+library(ggcorrplot)
+library(kableExtra)
+library(jtools)     # for regression model plots
+library(ggstance) # to support jtools plots
+
+# functions and data directory
+root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
+
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
+
+palette5 <- c("#25CB10", "#5AB60C", "#8FA108",   "#C48C04", "#FA7800")
+```
+
+
+
+## Data Wrangling
+
+See if you can change the chunk options to get rid of the text outputs
+
+```{r read_data}
+
+nhoods <- 
+  st_read("http://bostonopendata-boston.opendata.arcgis.com/datasets/3525b0ee6e6b427f9aab5d0a1d0a1a28_0.geojson") %>%
+  st_transform('ESRI:102286')
+
+boston <- 
+  read.csv(file.path(root.dir,"/Chapter3_4/bostonHousePriceData_clean.csv"))
+
+boston.sf <- 
+  boston %>% 
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326, agr = "constant") %>%
+  st_transform('ESRI:102286')
+
+
+bostonCrimes <- read.csv(file.path(root.dir,"/Chapter3_4/bostonCrimes.csv"))
+
+```
+
+Exploratory data analysis
+
+```{r EDA}
+
+# finding counts by group
+group_by(bostonCrimes, OFFENSE_CODE_GROUP) %>%
+  summarize(count = n()) %>%
+  arrange(-count) %>% top_n(10) %>%
+  kable() %>%
+  kable_styling()
+```
+
+See if you can alter the size of the image output.
+
+```{r price_map}
+# ggplot, reorder
+
+# Mapping data
+ggplot() +
+  geom_sf(data = nhoods, fill = "grey40") +
+  geom_sf(data = boston.sf, aes(colour = q5(PricePerSq)), 
+          show.legend = "point", size = .75) +
+  scale_colour_manual(values = palette5,
+                   labels=qBr(boston,"PricePerSq"),
+                   name="Quintile\nBreaks") +
+  labs(title="Price Per Square Foot, Boston") +
+  mapTheme()
+```
+
+Cleaning Crime Data
+
+```{r clean_crime}
+bostonCrimes.sf <-
+  bostonCrimes %>%
+    filter(OFFENSE_CODE_GROUP == "Aggravated Assault",
+           Lat > -1) %>%
+    dplyr::select(Lat, Long) %>%
+    na.omit() %>%
+    st_as_sf(coords = c("Long", "Lat"), crs = 4326, agr = "constant") %>%
+    st_transform('ESRI:102286') %>%
+    distinct()
+
+```
+
+
+```{r Features}
+
+# Counts of crime per buffer of house sale
+boston.sf$crimes.Buffer =
+    st_buffer(boston.sf, 660) %>% 
+    aggregate(mutate(bostonCrimes.sf, counter = 1),., sum) %>%
+    pull(counter)
+
+## Nearest Neighbor Feature
+st_c <- st_coordinates
+
+boston.sf <-
+  boston.sf %>% 
+    mutate(
+      crime_nn1 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 1),
+      crime_nn2 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 2), 
+      crime_nn3 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 3), 
+      crime_nn4 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 4), 
+      crime_nn5 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 5)) 
+```
+
+```{r assault density}
+## Plot assault density
+ggplot() + geom_sf(data = nhoods, fill = "grey40") +
+  stat_density2d(data = data.frame(st_coordinates(bostonCrimes.sf)), 
+                 aes(X, Y, fill = ..level.., alpha = ..level..),
+                 size = 0.01, bins = 40, geom = 'polygon') +
+  scale_fill_gradient(low = "#25CB10", high = "#FA7800", name = "Density") +
+  scale_alpha(range = c(0.00, 0.35), guide = FALSE) +
+  labs(title = "Density of Aggravated Assaults, Boston") +
+  mapTheme()
+```
+
+## Analyzing associations
+
+Run these code blocks...
+
+Can somebody walk me through what they do?
+
+Can you give me a one-sentence description of what the takeaway is?
+
+
+```{r Corellation}
+
+## Home Features cor
+st_drop_geometry(boston.sf) %>% 
+  mutate(Age = 2015 - YR_BUILT) %>%
+  dplyr::select(SalePrice, LivingArea, Age, GROSS_AREA) %>%
+  filter(SalePrice <= 1000000, Age < 500) %>%
+  gather(Variable, Value, -SalePrice) %>% 
+   ggplot(aes(Value, SalePrice)) +
+     geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA7800") +
+     facet_wrap(~Variable, ncol = 3, scales = "free") +
+     labs(title = "Price as a function of continuous variables") +
+     plotTheme()
+```
+
+Can we resize this somehow to make it look better?
+
+```{r crime_corr}
+## Crime cor
+boston.sf %>%
+  st_drop_geometry() %>%
+  mutate(Age = 2015 - YR_BUILT) %>%
+  dplyr::select(SalePrice, starts_with("crime_")) %>%
+  filter(SalePrice <= 1000000) %>%
+  gather(Variable, Value, -SalePrice) %>% 
+   ggplot(aes(Value, SalePrice)) +
+     geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA7800") +
+     facet_wrap(~Variable, nrow = 1, scales = "free") +
+     labs(title = "Price as a function of continuous variables") +
+     plotTheme()
+```
+
+## Correlation matrix
+
+Let's take a few minutes to interpret this
+
+```{r correlation_matrix}
+numericVars <- 
+  select_if(st_drop_geometry(boston.sf), is.numeric) %>% na.omit()
+
+ggcorrplot(
+  round(cor(numericVars), 1), 
+  p.mat = cor_pmat(numericVars),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+    labs(title = "Correlation across numeric variables") 
+
+```
+
+# Univarite correlation -> multi-variate OLS regression
+
+Pearson's R
+
+```{r uni_variate_Regression}
+
+cor.test(boston$LivingArea, boston$SalePrice, method = "pearson")
+
+ggplot(filter(boston, SalePrice <= 2000000), aes(y=SalePrice, x = LivingArea)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+## Univarite Regrssion
+
+We now have an R-squared value - what's this good for as a diagnostic of model quality?
+
+Can somebody interpret the coefficient?
+
+```{r simple_reg}
+livingReg <- lm(SalePrice ~ LivingArea, data = boston)
+
+summary(livingReg)
+```
+
+
+## Prediction example
+
+Make a prediction using the coefficient, intercept etc.,
+
+```{r calculate prediction}
+new_LivingArea = 4000
+
+# "by hand"
+157968.32 + 216.54 * new_LivingArea
+
+# predict() function
+predict(livingReg, newdata = data.frame(LivingArea = 4000))
+```
+
+
+## plot of marginal regression response
+```{r effectPlot}
+effect_plot(livingReg, pred = LivingArea, interval = TRUE, plot.points = TRUE)
+```
+
+
+## Multivariate Regression
+
+Let's take a look at this regression - how are we creating it?
+
+What's up with these categorical variables?
+
+Better R-squared - does that mean it's a better model?
+
+```{r mutlivariate_regression}
+reg1 <- lm(SalePrice ~ ., data = st_drop_geometry(boston.sf) %>% 
+                                 dplyr::select(SalePrice, LivingArea, Style, 
+                                               GROSS_AREA, R_TOTAL_RM, NUM_FLOORS,
+                                               R_BDRMS, R_FULL_BTH, R_HALF_BTH, 
+                                               R_KITCH, R_AC, R_FPLACE))
+
+summary(reg1)
+```
+
+## Some cool coefficient plots from Matt
+
+Let's try some of these out - they get some weird warning messages but it's OK I think. They help you learn more about the relationships in the model.
+
+```{r effect_plots}
+## Plot of marginal response
+effect_plot(reg1, pred = R_BDRMS, interval = TRUE, plot.points = TRUE)
+
+## Plot coefficients
+plot_summs(reg1)
+
+## plot multiple model coeffs
+plot_summs(reg1, livingReg)
+
+
+```
+Challenges:
+What is the Coefficient of LivingArea when Average Distance to 2-nearest crimes are considered?
+## Build a regression with LivingArea and crime_nn2
+## report regression coefficient for LivingArea
+## Is it different? Why?
+
+## Try to engineer a 'fixed effect' out of the other variables in an attempt to parameterize a variable that suggests a big or fancy house or levels of fanciness.
+## How does this affect your model?
+
+```{r}
+
+
+```
