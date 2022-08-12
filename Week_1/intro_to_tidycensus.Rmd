@@ -1,7 +1,6 @@
 ---
 title: "Lab 1 - Learning Tidy R With Census Data"
-author: "Michael Fichman"
-date: "MUSA 508, Fall, 2021"
+author: "Michael Fichman & Matt Harris"
 output:
   html_document:
     toc: true
@@ -71,16 +70,16 @@ census_api_key("YOUR KEY GOES HERE", overwrite = TRUE)
 
 ## Load census data dictionaries
 
-Now that we have our census credentials loaded, we can start downloading information from the API using some functions from tidycensus. We are going to make some comparisons between 2016 and 2010 ACS estimates for our target census tracts. In order to choose variables of interest, we are going to load the data dictionaries for each time period using `load_variables`.
+Now that we have our census credentials loaded, we can start downloading information from the API using some functions from tidycensus. We are going to make some comparisons between 2020 and 2016 ACS estimates for our target census tracts. In order to choose variables of interest, we are going to load the data dictionaries for each time period using `load_variables`.
 
 What does this `load_variables` function do and why are we writing these things in the parentheses after the name of the function? If you want to know about a function in R, you can type the name of a package or function into the console like this: `??load_variables` and information will show up in the help window in your R Studio environment.
 
 ```{r load_variables, cache = TRUE}
-acs_variable_list.2016 <- load_variables(2016, #year
+acs_variable_list.2020 <- load_variables(2020, #year
                                          "acs5", #five year ACS estimates
                                          cache = TRUE)
 
-acs_variable_list.2010 <- load_variables(2010, #year
+acs_variable_list.2016 <- load_variables(2016, #year
                                          "acs5", #five year ACS estimates
                                          cache = TRUE)
 ```
@@ -106,19 +105,19 @@ acs_vars <- c("B01001_001E", # ACS total Pop estimate
               "B06009_006E") # Total graduate or professional degree
 ```
 
-## Call the Census API to get tract level data for 2016 for all of Philadelphia
+## Call the Census API to get tract level data for 2020 for all of Philadelphia
 
 We use the `get_acs` function in `tidycensus` to query the API. Notice the different arguments for the function, and that they require certain types of info. For example, `geography` requires one of a finite list of answers, and they have to be formatted as character string.
 
 Remember the `??` function - you can learn about the parameters for `get_acs` this way. There is also a function called `get_decennial` which you can use for decennial census counts.
 
-We ask for data on our `acs_vars` for all tracts in Philadelphia County, PA in 2016. We ask for "wide" data (e.g. one variable per column, one row per tract) and we set `geometry` to `FALSE`.
+We ask for data on our `acs_vars` for all tracts in Philadelphia County, PA in 2020. We ask for "wide" data (e.g. one variable per column, one row per tract) and we set `geometry` to `FALSE`.
 
 What happens when you set `geometry` to `TRUE`?
 
-```{r get_acs_2016, cache = TRUE, message = FALSE, warning = FALSE}
-acsTractsPHL.2016 <- get_acs(geography = "tract",
-                             year = 2016, 
+```{r get_acs_2020, cache = TRUE, message = FALSE, warning = FALSE}
+acsTractsPHL.2020 <- get_acs(geography = "tract",
+                             year = 2020, 
                              variables = acs_vars, 
                              geometry = FALSE, 
                              state = "PA", 
@@ -155,41 +154,41 @@ Second we `rename` our variables to more common sense names.
 Lastly we `mutate` a few new columns.
 
 ```{r do_some_dplyr, cache = TRUE}
-acsTractsPHL.2016 <- acsTractsPHL.2016 %>%
+acsTractsPHL.2020 <- acsTractsPHL.2020 %>%
   dplyr::select (GEOID, NAME, all_of(acs_vars))
 
-acsTractsPHL.2016 <- acsTractsPHL.2016 %>%
-  rename (total_pop.2016 = B01001_001E,
-          total_HU.2016 = B25002_001E,
-          total_vacant.2016 = B25002_003E,
-          med_HH_Income.2016 = B19013_001E,
-          total_White.2016 = B02001_002E,
-          total_GradDeg.2016 = B06009_006E)
+acsTractsPHL.2020 <- acsTractsPHL.2020 %>%
+  rename (total_pop.2020 = B01001_001E,
+          total_HU.2020 = B25002_001E,
+          total_vacant.2020 = B25002_003E,
+          med_HH_Income.2020 = B19013_001E,
+          total_White.2020 = B02001_002E,
+          total_GradDeg.2020 = B06009_006E)
 
-acsTractsPHL.2016 <- acsTractsPHL.2016 %>%
-  mutate(vacancyPct.2016 = total_vacant.2016/total_HU.2016,
-         pctWhite.2016 = total_White.2016/total_pop.2016)
+acsTractsPHL.2020 <- acsTractsPHL.2020 %>%
+  mutate(vacancyPct.2020 = total_vacant.2020/total_HU.2020,
+         pctWhite.2020 = total_White.2020/total_pop.2020)
 ```
 
-Let's grab the 2010 data and do the same operations, but now - let's *chain the piped operations directly to the API call and do it all at once*. The only difference here is that we are going to change the variable names to say "2010" in them, not "2016".
+Let's grab the 2016 data and do the same operations, but now - let's *chain the piped operations directly to the API call and do it all at once*. The only difference here is that we are going to change the variable names to say "2016" in them, not "2020".
 
-```{r get_acs_2010, cache = TRUE, message = FALSE}
-acsTractsPHL.2010 <- get_acs(geography = "tract",
-                             year = 2010, 
+```{r get_acs_2016, cache = TRUE, message = FALSE}
+acsTractsPHL.2016 <- get_acs(geography = "tract",
+                             year = 2016, 
                              variables = acs_vars,
                              geometry = FALSE,
                              state = "PA", 
                              county = "Philadelphia",
                              output = "wide") %>%
   dplyr::select (GEOID, NAME, all_of(acs_vars)) %>% 
-  rename (total_pop.2010 = B01001_001E,
-          total_HU.2010 = B25002_001E,
-          total_vacant.2010 = B25002_003E,
-          med_HH_Income.2010 = B19013_001E,
-          total_White.2010 = B02001_002E,
-          total_GradDeg.2010 = B06009_006E) %>%
-  mutate(vacancyPct.2010 = total_vacant.2010/total_HU.2010,
-         pctWhite.2010 = total_White.2010/total_pop.2010)
+  rename (total_pop.2016 = B01001_001E,
+          total_HU.2016 = B25002_001E,
+          total_vacant.2016 = B25002_003E,
+          med_HH_Income.2016 = B19013_001E,
+          total_White.2016 = B02001_002E,
+          total_GradDeg.2016 = B06009_006E) %>%
+  mutate(vacancyPct.2016 = total_vacant.2016/total_HU.2016,
+         pctWhite.2016 = total_White.2016/total_pop.2016)
 ```
 
 ## Joining data
@@ -198,22 +197,22 @@ We can do a tabular join - each of our census dataframes should have a unique ID
 
 There are four kinds of joins - you can learn about them here: https://rpubs.com/williamsurles/293454
 
-We are going to do a "left join," keeping all the observations from the left hand side of the join argument, and only those which match from the right. Ideally this consists of all of the observations from the right hand side considering we have the same geometries in 2010 and 2016.
+We are going to do a "left join," keeping all the observations from the left hand side of the join argument, and only those which match from the right. Ideally this consists of all of the observations from the right hand side considering we have the same geometries in 2016 and 2020.
 
 ```{r left_join_tracts, cache = TRUE}
-allACS <- left_join(acsTractsPHL.2010, acsTractsPHL.2016, by= c("GEOID"))
+allACS <- left_join(acsTractsPHL.2016, acsTractsPHL.2020, by= c("GEOID"))
 ```
 
 ## Doing column math using mutate
 
-The `mutate` function can be used to create new columns. These columns can be the product of arithmetic using other columns. Here we are going to calculate changes in inflation-adjusted median household income from 2010-2016 and the change in the percentage of people holding a graduate degree. (Notice how we multiply `med_HH_Income.2010` by 1.10007 to adjust it to 2016 dollars).
+The `mutate` function can be used to create new columns. These columns can be the product of arithmetic using other columns. Here we are going to calculate changes in inflation-adjusted median household income from 2016-2020 and the change in the percentage of people holding a graduate degree. (Notice how we multiply `med_HH_Income.2016` by 1.08 to adjust it to 2020 dollars).
 
 Notice that you are overwriting allACS with a new data frame called the same thing. You can overwrite anything if you create something with the same name - so be careful!
 
 ```{r do_mutates, cache = TRUE}
 allACS <- allACS %>%
-  mutate(change_med_HH_Income = med_HH_Income.2016 - (med_HH_Income.2010 * 1.1007), 
-         change_Grad_Degree_Pct = (total_GradDeg.2016/total_pop.2016)-(total_GradDeg.2010/total_pop.2010))
+  mutate(change_med_HH_Income = med_HH_Income.2020 - (med_HH_Income.2016 * 1.08), 
+         change_Grad_Degree_Pct = (total_GradDeg.2020/total_pop.2020)-(total_GradDeg.2016/total_pop.2016))
 
 ```
 
@@ -269,9 +268,9 @@ Let's make this a bit more complex, and add some labels.
 ggplot(allACS)+
   geom_histogram(aes(change_med_HH_Income), binwidth = 5000)+
   labs(
-    title = "Change in Philadelphia HH median income by tract, 2010-2016",
+    title = "Change in Philadelphia HH median income by tract, 2016-2020",
     caption = "Data: US Census Bureau, ACS 5-year estimates",
-    x="Change in Med HH Income (2016 dollars)", 
+    x="Change in Med HH Income (2020 dollars)", 
        y="Number of tracts")
   
 ```
@@ -337,17 +336,18 @@ What can we see here about the distributions of the data, and how the distributi
 
 ```{r ggplot_histogram_2, warning = FALSE, cache = TRUE}
 ggplot(allACS)+
-  geom_histogram(aes(change_med_HH_Income), binwidth = 10000)+
+  geom_histogram(aes(change_med_HH_Income),
+                 binwidth = 5000)+
   labs(
-    title = "Change in Philadelphia HH median income by tract, 2010-2016",
+    title = "Change in Philadelphia HH median income by tract, 2016-2020",
     caption = "Data: US Census Bureau, ACS 5-year estimates",
-    x="Change in Med HH Income (2016 dollars)", 
+    x="Change in Med HH Income (2020 dollars)", 
        y="Number of tracts")+
   facet_wrap(~mtAiry, scales = "free")
   
 ```
 
-We can create a scatterplot to see what the relationship is between 2010 and 2016 income and where our Mt. Airy tracts fall.
+We can create a scatterplot to see what the relationship is between 2016 and 2020 income and where our Mt. Airy tracts fall.
 
 Notice how we put the inflation adjustment right in the `geom_point` call - you can temporarily create new data inside your ggplot diagrams!
 
@@ -359,42 +359,42 @@ What do you think this line represents? How does it help us interpret these poin
 
 ```{r ggplot_point1, warning = FALSE, cache = TRUE}
 ggplot(allACS)+
-  geom_point(aes(x =med_HH_Income.2010 * 1.1007, 
-                 y = med_HH_Income.2016,
+  geom_point(aes(x =med_HH_Income.2016 * 1.08, 
+                 y = med_HH_Income.2020,
                  color = mtAiry))+
   geom_abline(intercept = 0, slope = 1)+
   labs(
-    title = "2016 Median HH Income as a Function of 2010 Median HH Income",
-    subtitle = "All figures in 2016 dollars",
+    title = "2020 Median HH Income as a Function of 2016 Median HH Income",
+    subtitle = "All figures in 2020 dollars",
     caption = "Data: US Census Bureau, ACS 5-year estimates",
-    x="Med HH Income 2010 ($)", 
-    y="Med HH Income 2016 ($)")
+    x="Med HH Income 2016 ($)", 
+    y="Med HH Income 2020 ($)")
   
 ```
 
 There are very well established correlations between socio-demographic characteristics and wealth in the US. Philadelphia is no exception. A simple scatterplot is stark evidence of this correlation. 
 
-We can plot a `geom_smooth` trendline in here using the `method = "lm"` e.g. a linear fit to see.
+We can plot a `geom_smooth` trendline in here using the `method = "lm"` e.g. a linear fit to see. The default for `geom_smooth` is much more wiggly and may not be the best for visuals like this.
 
 How do our tracts in Mt. Airy look in the context of distribution of wealth and relative to the trend line?
 
-If you plot these data for 2010, do they look different?
+If you plot these data for 2020, do they look different?
 
 
 ```{r ggplot_point2, warning = FALSE, cache = TRUE, message = FALSE}
 ggplot(allACS)+
-  geom_point(aes(x = 100* pctWhite.2016, 
-                 y = med_HH_Income.2016,
+  geom_point(aes(x = 100* pctWhite.2020, 
+                 y = med_HH_Income.2020,
                  color = mtAiry))+
-  geom_smooth(aes(x = 100* pctWhite.2016, 
-                  y = med_HH_Income.2016), 
+  geom_smooth(aes(x = 100* pctWhite.2020, 
+                  y = med_HH_Income.2020), 
               method = "lm", se = FALSE)+
   labs(
-    title = "2016 Median HH Income as a Function of Pct White",
-    subtitle = "All figures in 2016 dollars",
+    title = "2020 Median HH Income as a Function of Pct White",
+    subtitle = "All figures in 2020 dollars",
     caption = "Data: US Census Bureau, ACS 5-year estimates",
     x="Pct. Residents Identifying as 'White Only'", 
-    y="Med HH Income 2016 ($)")
+    y="Med HH Income 2020 ($)")
   
 ```
 
@@ -402,50 +402,50 @@ ggplot(allACS)+
 
 Tidycensus can also provide us with a geometry for our data. The `sf` package handles shapefiles and interfaces well with `tidycensus` to allow us to analyze and map spatial data. Next lesson we will do some spatial analysis using these data.
 
-Let's re-run our call for 2016 Census Data and turn the `geometry = TRUE` and then we can make a map of `pctWhite.2016` using the tidycensus data right in ggplot using a special `geom`.
+Let's re-run our call for 2020 Census Data and turn the `geometry = TRUE` and then we can make a map of `pctWhite.2020` using the tidycensus data right in ggplot using a special `geom`.
 
 Notice that there is a `geometry` column in our data frame now - it's actually an `sf` object, which is just like a data frame except it has a column with drawing instructions that you can't operate on or alter.
 
 Observe the use of the `%>%` operator here - I'm going to chain all of our operations together into one big chunk of code:
 
 ```{r spatial_tidycensus, message=FALSE, warning=FALSE, cache=TRUE, include=FALSE}
-acsTractsPHL.2016.sf <- get_acs(geography = "tract",
-                             year = 2016, 
+acsTractsPHL.2020.sf <- get_acs(geography = "tract",
+                             year = 2020, 
                              variables = acs_vars, 
                              geometry = TRUE, 
                              state = "PA", 
                              county = "Philadelphia", 
                              output = "wide") %>% 
   dplyr::select (GEOID, NAME, all_of(acs_vars)) %>%
-  rename (total_pop.2016 = B01001_001E,
-          total_HU.2016 = B25002_001E,
-          total_vacant.2016 = B25002_003E,
-          med_HH_Income.2016 = B19013_001E,
-          total_White.2016 = B02001_002E,
-          total_GradDeg.2016 = B06009_006E) %>%
-  mutate(vacancyPct.2016 = total_vacant.2016/total_HU.2016,
-         pctWhite.2016 = total_White.2016/total_pop.2016) %>%
+  rename (total_pop.2020 = B01001_001E,
+          total_HU.2020 = B25002_001E,
+          total_vacant.2020 = B25002_003E,
+          med_HH_Income.2020 = B19013_001E,
+          total_White.2020 = B02001_002E,
+          total_GradDeg.2020 = B06009_006E) %>%
+  mutate(vacancyPct.2020 = total_vacant.2020/total_HU.2020,
+         pctWhite.2020 = total_White.2020/total_pop.2020) %>%
   mutate(mtAiry = ifelse(GEOID %in% myTracts, "MT AIRY", "REST OF PHILADELPHIA")) %>%
   st_as_sf(crs = 4326) # Turn shp into sf object and project as WGS84
 ```
 
 ```{r spatial_tidycensus_no_eval, message=FALSE, warning=FALSE, cache=TRUE, eval = FALSE}
-acsTractsPHL.2016.sf <- get_acs(geography = "tract",
-                             year = 2016, 
+acsTractsPHL.2020.sf <- get_acs(geography = "tract",
+                             year = 2020, 
                              variables = acs_vars, 
                              geometry = TRUE, 
                              state = "PA", 
                              county = "Philadelphia", 
                              output = "wide") %>% 
   dplyr::select (GEOID, NAME, all_of(acs_vars)) %>%
-  rename (total_pop.2016 = B01001_001E,
-          total_HU.2016 = B25002_001E,
-          total_vacant.2016 = B25002_003E,
-          med_HH_Income.2016 = B19013_001E,
-          total_White.2016 = B02001_002E,
-          total_GradDeg.2016 = B06009_006E) %>%
-  mutate(vacancyPct.2016 = total_vacant.2016/total_HU.2016,
-         pctWhite.2016 = total_White.2016/total_pop.2016) %>%
+  rename (total_pop.2020 = B01001_001E,
+          total_HU.2020 = B25002_001E,
+          total_vacant.2020 = B25002_003E,
+          med_HH_Income.2020 = B19013_001E,
+          total_White.2020 = B02001_002E,
+          total_GradDeg.2020 = B06009_006E) %>%
+  mutate(vacancyPct.2020 = total_vacant.2020/total_HU.2020,
+         pctWhite.2020 = total_White.2020/total_pop.2020) %>%
   mutate(mtAiry = ifelse(GEOID %in% myTracts, "MT AIRY", "REST OF PHILADELPHIA")) %>%
   st_as_sf(crs = 4326) # Turn shp into sf object and project as WGS84
 ```
@@ -458,9 +458,9 @@ In our next lesson, we will do more detailed cartography and spatial analysis us
 
 ```{r ggplot_geom_sf, warning = FALSE, cache = TRUE}
 ggplot()+
-  geom_sf(data = acsTractsPHL.2016.sf, aes(fill = pctWhite.2016),
+  geom_sf(data = acsTractsPHL.2020.sf, aes(fill = pctWhite.2020),
           color = "transparent")+
-  geom_sf(data = acsTractsPHL.2016.sf %>%
+  geom_sf(data = acsTractsPHL.2020.sf %>%
             filter(mtAiry == "MT AIRY") %>%
             st_union(),
           color = "white",
