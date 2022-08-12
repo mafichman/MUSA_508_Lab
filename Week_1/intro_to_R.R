@@ -89,7 +89,7 @@ twoColumns <- cbind(characterVector, numericVector)
 # Notice that this example has my filepath in it!
 # Use the filepath appropriate for your file!
 
-dat <- read.csv("~/GitHub/MUSA_508_Wk1_2021/lab_1_2_data.csv")
+dat <- read.csv("Week_1/lab_1_2_data.csv")
 
 # For mac: read.csv("/users/myname/desktop/experiment.csv")
 
@@ -109,11 +109,24 @@ length(dat)
 
 nrow(dat)
 
+# or get both dimensions at once
+
+dim(dat)
+
 # What are the column names
 names(dat)
 
+# use str() to know more about the data structure 
+
+str(dat)
+
 # Let's call a column using the "$" operator
 # Note the syntax - dataframe$column
+
+# get a 'vector' of all the values in the total_HU.2010 column
+
+dat$total_HU.2010
+
 # What type of data are they?
 
 typeof(dat$total_HU.2010)
@@ -129,6 +142,7 @@ median(dat$vacancyPct.2016) # uh oh - this won't work. maybe some NA values?
 # NA data can break operations - be aware of them in your data!
 
 # We can omit the NA values if we want
+# You might need this trick often!
 
 median(dat$vacancyPct.2016, na.rm = TRUE)
 
