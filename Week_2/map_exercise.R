@@ -1,7 +1,7 @@
 myData  <- rbind(selectCentroids, clip) %>%
   rbind(., selection)
 
-  ggplot(myData)+
+ggplot(myData)+
   geom_sf(data = st_union(tracts09))+
   geom_sf(aes(fill = q5(TotalPop))) +
   scale_fill_manual(values = palette5,
@@ -63,3 +63,4 @@ st_drop_geometry(allTracts.threeMarkets) %>%
   scale_fill_manual(values = c("orange", "green", "blue", "black"))+
   labs(title = "Indicator differences across submarkets") +
   plotTheme() + theme(legend.position="bottom")
+
