@@ -104,7 +104,7 @@ We are going to do some meat-and-potatoes vector GIS - union and buffer.
 
 ## Union
 
-Merging all the shapes (the `st_buffer(1)` just consolidates fragmented geometries)
+Merging all the shapes. The use of `st_buffer(1)` is to add a little bit of room (here it is 1ft) to consolidates small inconsistencies in the outline of each UGA polygon. These occur when digitizing polygons is not perfectly done; and rarely is it perfect!
 
 
 ```{r union}
@@ -149,10 +149,12 @@ ggplot() +
 ```
 
 # Join the Town info to the buffers
+Here `st_make_valid()` is used to fix inconsistencies in polygon geometry. Try running the code without `st_make_valid` and you will see an error about invalid geometry due to self-intersecting polygons.
 
 ```{r buffersAndTowns}
 buffersAndTowns <- 
-  st_intersection(st_make_valid(studyAreaTowns), bothBuffers) %>%
+  st_intersection(st_make_valid(studyAreaTowns),
+                  bothBuffers) %>%
   filter(MUNI != "MOUNTVILLE BOROUGH")
 ```
 
