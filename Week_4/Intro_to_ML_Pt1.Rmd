@@ -1,16 +1,10 @@
 ---
 title: "MUSA 508, Lab 4 - Spatial Machine Learning Pt. 1"
-author: "Steif, Harris, Fichman - 2020/21"
+author: "Harris, Fichman, and Steif - 2022/23"
 output: html_document
 ---
 
-# Big Section Header
-
-You can put some text under the header
-
-## Little Section Header
-
-You can put some text under the header
+# MUSA 508, Lab 4 - Spatial Machine Learning Pt. 1
 
 ```{r setup, include=FALSE}
 
@@ -28,10 +22,13 @@ library(ckanr)
 library(FNN)
 library(grid)
 library(gridExtra)
-library(ggcorrplot)
+library(ggcorrplot) # plot correlation plot
+library(corrr)      # another way to plot correlation plot
 library(kableExtra)
 library(jtools)     # for regression model plots
 library(ggstance) # to support jtools plots
+library(ggpubr)    # plotting R^2 value on ggplot point scatter
+library(broom.mixed) # needed for effects plots
 
 # functions and data directory
 root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
@@ -66,7 +63,7 @@ bostonCrimes <- read.csv(file.path(root.dir,"/Chapter3_4/bostonCrimes.csv"))
 
 ```
 
-Exploratory data analysis
+### Exploratory data analysis
 
 ```{r EDA}
 
@@ -78,9 +75,11 @@ group_by(bostonCrimes, OFFENSE_CODE_GROUP) %>%
   kable_styling()
 ```
 
-See if you can alter the size of the image output.
+### Mapping 
 
-```{r price_map}
+See if you can alter the size of the image output. Search for adjusting figure height and width for a rmarkdown block
+
+```{r price_map, }
 # ggplot, reorder
 
 # Mapping data
@@ -95,7 +94,8 @@ ggplot() +
   mapTheme()
 ```
 
-Cleaning Crime Data
+### Cleaning Crime Data
+Why are we using a filter for `Lat > -1`?
 
 ```{r clean_crime}
 bostonCrimes.sf <-
@@ -110,12 +110,32 @@ bostonCrimes.sf <-
 
 ```
 
+### Create Nearest Spatial Features
+This is where we do two important things:
+
+*   aggregate values within a buffer, and 
+*   create  `nearest neighbor` features. 
+
+These are primary tools we use to add the local spatial signal to each of the points/rows/observations we are modeling. 
+
+#### Buffer aggregate
+
+The first code in this block buffers each point in `boston.sf` by 660 ft and then uses `aggregate` to count the number of `bostonCrimes.sf` points within that buffer. There is a nested call to `mutate` to assign a value of `1` for each `bostonCrimes.sf` as under a column called `counter`. This allows each crime to have the same weight in when the `sun` function is called, but other weighting schemes could be used. Finally, the code `pull` pulls the aggregate values so they can be assigned as the `crimes.Buffer` column to `boston.sf`. This is a little different from how you had assigned new columns before (usually using `mutate`), but valid. Your new feature `crimes.Buffer` is a count of all the crimes within 660ft of each reported crime. Why would it be god to know this when building a model?  
+
+
+#### k nearest neighbor (knn)
+
+The second block of code is using knn for averaging or summing values of a set number of (referred to as `k`) the nearest observations to each observation; it's *nearest neighbors*. With this, the model can understand the magnitude of values that are *near* each point. This adds a spatial signal to the model. 
+
+The function `nn_function()` takes two pairs of **coordinates** form two `sf` **point** objects. You will see the use of `st_c()` which is just a shorthand way to get the coordinates with the `st_coordinates()` function. You can see where `st_c()` is created. Using `st_c()` within `mutate` converts the points to longitude/latitude coordinate pairs for the `nn_function()` to work with. If you put *polygon* features in there, it will error. Instead you can use `st_c(st_centroid(YourPolygonSfObject))` to get nearest neighbors to a polygon centroid.
+
+The number `k` in the `nn_function()` function is the number of neighbors to to values from that are then averaged. Different types of crime (or anything else you measure) will require different values of `k`. *You will have to think about this!*. What could be the importance of `k` when you are making knn features for a violent crime versus and nuisance crime?
 
 ```{r Features}
 
 # Counts of crime per buffer of house sale
-boston.sf$crimes.Buffer =
-    st_buffer(boston.sf, 660) %>% 
+boston.sf$crimes.Buffer <- boston.sf %>% 
+    st_buffer(660) %>% 
     aggregate(mutate(bostonCrimes.sf, counter = 1),., sum) %>%
     pull(counter)
 
@@ -125,11 +145,11 @@ st_c <- st_coordinates
 boston.sf <-
   boston.sf %>% 
     mutate(
-      crime_nn1 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 1),
-      crime_nn2 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 2), 
-      crime_nn3 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 3), 
-      crime_nn4 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 4), 
-      crime_nn5 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), 5)) 
+      crime_nn1 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 1),
+      crime_nn2 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 2), 
+      crime_nn3 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 3), 
+      crime_nn4 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 4), 
+      crime_nn5 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 5)) 
 ```
 
 ```{r assault density}
@@ -147,13 +167,14 @@ ggplot() + geom_sf(data = nhoods, fill = "grey40") +
 ## Analyzing associations
 
 Run these code blocks...
+Notice the use of `st_drop_geometry()`, this is the correct way to go from a `sf` spatial dataframe to a regular dataframe with no spatial component.
 
 Can somebody walk me through what they do?
 
 Can you give me a one-sentence description of what the takeaway is?
 
 
-```{r Corellation}
+```{r Correlation}
 
 ## Home Features cor
 st_drop_geometry(boston.sf) %>% 
@@ -187,7 +208,11 @@ boston.sf %>%
 
 ## Correlation matrix
 
-Let's take a few minutes to interpret this
+A correlation matrix gives us the pairwise correlation of each set of features in our data. It is usually advisable to include the target/outcome variable in this so we can understand which features are related to it.
+
+Some things to notice in this code; we use `select_if()` to select only the features that are numeric. This is really handy when you don't want to type or hard-code the names of your features; `ggcorrplot()` is a function from the `ggcorrplot` package.
+
+**Let's take a few minutes to interpret this**
 
 ```{r correlation_matrix}
 numericVars <- 
@@ -201,31 +226,72 @@ ggcorrplot(
   insig = "blank") +  
     labs(title = "Correlation across numeric variables") 
 
+# yet another way to plot the correlation plot using the corrr library
+numericVars %>% 
+  correlate() %>% 
+  autoplot() +
+  geom_text(aes(label = round(r,digits=2)),size = 2)
+
 ```
 
 # Univarite correlation -> multi-variate OLS regression
 
-Pearson's R
+### Pearson's r - Correlation Coefficient
+
+Pearson's r Learning links:
+*   [Pearson Correlation Coefficient (r) | Guide & Examples](https://www.scribbr.com/statistics/pearson-correlation-coefficient/)
+*   [Correlation Test Between Two Variables in R](http://www.sthda.com/english/wiki/correlation-test-between-two-variables-in-r)
+
+Note: the use of the `ggscatter()` function from the `ggpubr` package to plot the *Pearson's rho* or *Pearson's r* statistic; the Correlation Coefficient. This number can also be squared and represented as `r2`. However, this differs from the `R^2` or `R2` or "R-squared" of a linear model fit, known as the Coefficient of Determination. This is explained a bit more below.
 
 ```{r uni_variate_Regression}
+boston_sub_200k <- st_drop_geometry(boston.sf) %>% 
+filter(SalePrice <= 2000000) 
 
-cor.test(boston$LivingArea, boston$SalePrice, method = "pearson")
+cor.test(boston_sub_200k$LivingArea,
+         boston_sub_200k$SalePrice, 
+         method = "pearson")
 
-ggplot(filter(boston, SalePrice <= 2000000), aes(y=SalePrice, x = LivingArea)) +
-  geom_point() +
-  geom_smooth(method = "lm")
+ggscatter(boston_sub_200k,
+          x = "LivingArea",
+          y = "SalePrice",
+          add = "reg.line") +
+  stat_cor(label.y = 2500000) 
+
 ```
 
-## Univarite Regrssion
 
-We now have an R-squared value - what's this good for as a diagnostic of model quality?
+The Pearson's rho - Correlation Coefficient and the R2 Coefficient of Determination are **very** frequently confused! It is a really common mistake, so take a moment to understand what they are and how they differ. [This blog](https://towardsdatascience.com/r%C2%B2-or-r%C2%B2-when-to-use-what-4968eee68ed3) is a good explanation. In summary:
+
+*   The `r` is a measure the degree of relationship between two variables say x and y. It can go between -1 and 1.  1 indicates that the two variables are moving in unison.
+
+*   However, `R2` shows percentage variation in y which is explained by all the x variables together. Higher the better. It is always between 0 and 1. It can never be negative – since it is a squared value.
+
+## Univarite Regression
+
+### R2 - Coefficient of Determination
+
+Discussed above, the `R^2` or "R-squared" is a common way to validate the predictions of a linear model. Below we run a linear model on our data with the `lm()` function and get the output in our R terminal. At first this is an intimidating amount of information! Here is a [great resource](https://towardsdatascience.com/understanding-linear-regression-output-in-r-7a9cbda948b3) to understand how that output is organized and what it means.  
+
+What we are focusing on here is that `R-squared`,  `Adjusted R-squared` and the `Coefficients`.
+
+What's the `R2` good for as a diagnostic of model quality?
 
 Can somebody interpret the coefficient?
 
+Note: Here we use `ggscatter` with the `..rr.label` argument to show the `R2` Coefficient of Determination.
+
 ```{r simple_reg}
-livingReg <- lm(SalePrice ~ LivingArea, data = boston)
+livingReg <- lm(SalePrice ~ LivingArea, data = boston_sub_200k)
 
 summary(livingReg)
+
+ggscatter(boston_sub_200k,
+          x = "LivingArea",
+          y = "SalePrice",
+          add = "reg.line") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), label.y = 2500000) +
+  stat_regline_equation(label.y = 2250000) 
 ```
 
 
@@ -234,10 +300,12 @@ summary(livingReg)
 Make a prediction using the coefficient, intercept etc.,
 
 ```{r calculate prediction}
+coefficients(livingReg)
+
 new_LivingArea = 4000
 
 # "by hand"
-157968.32 + 216.54 * new_LivingArea
+378370.01571  + 88.34939 * new_LivingArea
 
 # predict() function
 predict(livingReg, newdata = data.frame(LivingArea = 4000))
@@ -245,6 +313,7 @@ predict(livingReg, newdata = data.frame(LivingArea = 4000))
 
 
 ## plot of marginal regression response
+
 ```{r effectPlot}
 effect_plot(livingReg, pred = LivingArea, interval = TRUE, plot.points = TRUE)
 ```
@@ -259,7 +328,7 @@ What's up with these categorical variables?
 Better R-squared - does that mean it's a better model?
 
 ```{r mutlivariate_regression}
-reg1 <- lm(SalePrice ~ ., data = st_drop_geometry(boston.sf) %>% 
+reg1 <- lm(SalePrice ~ ., data = boston_sub_200k %>% 
                                  dplyr::select(SalePrice, LivingArea, Style, 
                                                GROSS_AREA, R_TOTAL_RM, NUM_FLOORS,
                                                R_BDRMS, R_FULL_BTH, R_HALF_BTH, 
@@ -270,20 +339,25 @@ summary(reg1)
 
 ## Some cool coefficient plots from Matt
 
-Let's try some of these out - they get some weird warning messages but it's OK I think. They help you learn more about the relationships in the model.
+Let's try some of these out. They help you learn more about the relationships in the model.
+
+What does a long line on either side of the blue circle suggest?
+
+What does the location of the blue circle relative to the center line at zero suggest?
 
 ```{r effect_plots}
 ## Plot of marginal response
 effect_plot(reg1, pred = R_BDRMS, interval = TRUE, plot.points = TRUE)
 
 ## Plot coefficients
-plot_summs(reg1)
+plot_summs(reg1, scale = TRUE)
 
 ## plot multiple model coeffs
 plot_summs(reg1, livingReg)
 
 
 ```
+
 Challenges:
 What is the Coefficient of LivingArea when Average Distance to 2-nearest crimes are considered?
 ## Build a regression with LivingArea and crime_nn2
