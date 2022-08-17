@@ -69,8 +69,8 @@ qBr <- function(df, variable, rnd) {
     as.character(quantile(round(df[[variable]],0),
                           c(.01,.2,.4,.6,.8), na.rm=T))
   } else if (rnd == FALSE | rnd == F) {
-    as.character(formatC(quantile(df[[variable]]), digits = 3),
-                 c(.01,.2,.4,.6,.8), na.rm=T)
+    as.character(formatC(quantile(df[[variable]]),
+                 c(.01,.2,.4,.6,.8), na.rm=T), digits = 3)
   }
 }
 
@@ -86,14 +86,17 @@ census_api_key("YOUR API KEY GOES HERE", overwrite = TRUE)
 
 # ---- Year 2009 tracts -----
 
-# We run our year 2000 code using 2009 ACS (and ACS variables from our 2017 list)
+# We run our year 2000 code using 2009 ACS (and ACS variables from our 2020 list)
 # Notice this returns "long" data - let's examine it
 
 tracts09 <-  
-  get_acs(geography = "tract", variables = c("B25026_001E","B02001_002E","B15001_050E",
-                                             "B15001_009E","B19013_001E","B25058_001E",
-                                             "B06012_002E"), 
-                year=2009, state=42, county=101, geometry=T) %>% 
+  get_acs(geography = "tract",
+          variables = c("B25026_001E","B02001_002E",
+                        "B15001_050E","B15001_009E",
+                        "B19013_001E", "B25058_001E",
+                        "B06012_002E"), 
+          year=2009, state=42,
+          county=101, geometry=T) %>% 
   st_transform('ESRI:102728')
 
 
@@ -184,19 +187,19 @@ tracts09 <-
          year = "2009") %>%
   dplyr::select(-Whites,-FemaleBachelors,-MaleBachelors,-TotalPoverty)
 
-# Tracts 2009 is now complete. Let's grab 2017 tracts and do a congruent
+# Tracts 2009 is now complete. Let's grab 2020 tracts and do a congruent
 # set of operations
 
-# ---- 2017 Census Data -----
+# ---- 2020 Census Data -----
 
 # Notice that we are getting "wide" data here in the first place
 # This saves us the trouble of using "spread"
 
-tracts17 <- 
+tracts20 <- 
   get_acs(geography = "tract", variables = c("B25026_001E","B02001_002E","B15001_050E",
                                              "B15001_009E","B19013_001E","B25058_001E",
                                              "B06012_002E"), 
-          year=2017, state=42, county=101, geometry=T, output="wide") %>%
+          year=2020, state=42, county=101, geometry=T, output="wide") %>%
   st_transform('ESRI:102728') %>%
   rename(TotalPop = B25026_001E, 
          Whites = B02001_002E,
@@ -209,12 +212,12 @@ tracts17 <-
   mutate(pctWhite = ifelse(TotalPop > 0, Whites / TotalPop,0),
          pctBachelors = ifelse(TotalPop > 0, ((FemaleBachelors + MaleBachelors) / TotalPop),0),
          pctPoverty = ifelse(TotalPop > 0, TotalPoverty / TotalPop, 0),
-         year = "2017") %>%
+         year = "2020") %>%
   dplyr::select(-Whites, -FemaleBachelors, -MaleBachelors, -TotalPoverty) 
 
-# --- Combining 09 and 17 data ----
+# --- Combining 09 and 20 data ----
 
-allTracts <- rbind(tracts09,tracts17)
+allTracts <- rbind(tracts09,tracts20)
 
 
 # ---- Wrangling Transit Open Data -----
@@ -281,6 +284,7 @@ buffer <- filter(septaBuffers, Legend=="Unioned Buffer")
 
 # Clip the 2009 tracts ... by seeing which tracts intersect (st_intersection)
 # with the buffer and clipping out only those areas
+# if you get a warning about "attribute variables are assumed..." don't worry about it.
 clip <- 
   st_intersection(buffer, tracts09) %>%
   dplyr::select(TotalPop) %>%
@@ -296,6 +300,7 @@ selection <-
 # Note the st_centroid call creating centroids for each feature
 
 # Let's go through this in pieces to understand what's happening here
+# if you get a warning about "st_centroid assumes attributes..." don't worry about it.
 
 selectCentroids <-
   st_centroid(tracts09)[buffer,] %>%
@@ -315,7 +320,7 @@ selectCentroids <-
 # join, and add them all together.
 # Do this operation and then examine it.
 # What represents the joins/doesn't join dichotomy?
-# Note that this contains a correct 2009-2017 inflation calculation
+# Note that this contains a correct 2009-2020 inflation calculation
 
 allTracts.group <- 
   rbind(
@@ -351,7 +356,7 @@ kable(allTracts.Summary) %>%
            general = "Table 2.2")
 
 # Let's make some comparisons and speculate about the willingness to pay
-# and demographics in these areas 2009-2017 (see the 2000 data in the text too)
+# and demographics in these areas 2009-2020 (see the 2000 data in the text too)
 
 # Notice how we pipe the kable() command here
 
@@ -414,4 +419,5 @@ allTracts.threeMarkets <-
   mutate(Submarket = replace_na(Submarket, "Non-TOD")) %>%
   st_sf() 
 
-# If any time is reamining,  commence work on homework assignment
+# If any time is remaining,  commence work on homework assignment
+
