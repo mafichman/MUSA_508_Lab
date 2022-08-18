@@ -30,7 +30,7 @@ Additional content is available in the [R FAQ for Planners](https://mafichman.gi
     -   Intro_to_ML_Pt1.Rmd
 -   `Week_6` - Spatial modeling with {sf} & predictive policing example
     -   Pred_poling_lab.Rmd
--   `Week_7` - XXX
+-   `Week_7` - Classification with logistic regression & churn prediction example
     -   serving_facebook_ads.Rmd
 
     -   advertising_clean.csv
