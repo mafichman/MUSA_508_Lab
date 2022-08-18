@@ -1,7 +1,7 @@
 ---
 title: 'ML #3 Predictive Policing'
 author: "Prof. Fichman & Prof. Harris"
-date: "10/22/2021"
+date: "08/15/2022"
 output: html_document
 ---
 
@@ -23,6 +23,7 @@ library(gridExtra)
 library(knitr)
 library(kableExtra)
 library(tidycensus)
+library(classInt)   # for KDE and ML risk class intervals
 # functions
 root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
 source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
@@ -70,11 +71,11 @@ chicagoBoundary <-
 Plotting point data and density
 
 > How do we analyze point data?
->
+
 > Are there other geometries useful to represent point locations?
 
 ```{r fig.width=6, fig.height=4}
-# uses grid.arrange to organize indpendent plots
+# uses grid.arrange to organize independent plots
 grid.arrange(ncol=2,
 ggplot() + 
   geom_sf(data = chicagoBoundary) +
@@ -97,7 +98,7 @@ ggplot() +
 
 > What is a fishnet grid?
 
-The `{sf}` package offers really easy way to create fishnet grids.
+The `{sf}` package offers really easy way to create fishnet grids using the `st_make_grid()` function. The `cellsize` argument allows you to set the size of the grid cells; in this case it is set to `500` meters. You may have to do some research on the spatial layers projection (using `st_crs()` to know what coordinate system you are in) to understand if you are in feet or meters. If you are using Longitude and Latitude, you will need to project the data to a projected coordinate system to get distance measurements.
 
 Examine the fishnet - the unique ID is crucial to building a data set!
 
@@ -108,9 +109,11 @@ fishnet <-
   st_make_grid(chicagoBoundary,
                cellsize = 500, 
                square = TRUE) %>%
-  .[chicagoBoundary] %>%            # <- MDH Added
+  .[chicagoBoundary] %>%            # fast way to select intersecting polygons
   st_sf() %>%
-  mutate(uniqueID = rownames(.))
+  mutate(uniqueID = 1:n())
+
+
 ```
 
 ### Aggregate points to the fishnet
@@ -124,7 +127,7 @@ crime_net <-
   mutate(countBurglaries = 1) %>% 
   aggregate(., fishnet, sum) %>%
   mutate(countBurglaries = replace_na(countBurglaries, 0),
-         uniqueID = rownames(.),
+         uniqueID = 1:n(),
          cvID = sample(round(nrow(fishnet) / 24), 
                        size=nrow(fishnet), replace = TRUE))
 
@@ -169,33 +172,38 @@ neighborhoods <-
 
 #### How we aggregate a feature to our fishnet
 
-This is an important chunk of code with some unfamiliar lines. We'll step through it.
+This is an important chunk of code with some unfamiliar lines. The overall to assign the fishnet ID to each abandoned car point, group the points by fishnet ID and count them per ID, join that count back to the fishnet and then go from a long format to a wide format. We'll step through it:
+
+*   `st_join(fishnet, join=st_within)`
+*       spatially join `abandonCars` points to the `fishnet` polygon they are within by specifying `st_within`. This results in the `Abandoned_Cars` points being given the `uniqueID` of the fishnet grid cell that they are within.
+*   `st_drop_geometry()`
+*       drop the geometry attributes of the joined data so that we can do summaries on it without having to also calculate geometries which would be quite slow.
+*   `group_by(uniqueID, Legend)`
+*       we want to count the number of abandoned cars per fishnet, so we use `group_by` on the unique cell ID. We also include the `Legend` column, which is more useful if you are doing this one more than a single layer.
+*   `summarize(count = n())`
+*       use `summarize` to create a new field called `count` that will be the count of all abandoned cars per fishnet grid cell. The `n()` function returns the number within each group (i.e. `uniqueID`)
+*   `left_join(fishnet, ., by = "uniqueID")`
+*       join that summary back to spatial fishnet by the `uniqueID` field which is in both. Note the use of the `.` "dot operator" which is a stand in for the object being piped into the function (i.e. `left_join()`). We use this because we want the summaries to be the second argument of the join; not the first argument which is the dplyr default.
+*   `spread(Legend, count, fill=0)`
+*       "spread" from long to wide format and make a new column for each value of the `Legend` field. This also is more useful if there are multiple layers in the `Legend` column. Note the use of `fill=0` tells the function to fill in any fishnet cells without an abandoned car with a `0` instead of `NA`.
+*   `dplyr::select(-``<NA>``)`
+*       remove a `<NA>` column that was created because of the `NA` value in the `Legend` column when it was "spread"
+*   `ungroup()`
+*       Finally, ungroup the dataframe.
 
 ```{r}
 
 vars_net <- abandonCars %>%
-  st_join(., fishnet, join=st_within) %>%
+  st_join(fishnet, join=st_within) %>%
   st_drop_geometry() %>%
   group_by(uniqueID, Legend) %>%
   summarize(count = n()) %>%
-  full_join(fishnet, by = "uniqueID") %>%
+  left_join(fishnet, ., by = "uniqueID") %>%
   spread(Legend, count, fill=0) %>%
-  st_sf() %>%
   dplyr::select(-`<NA>`) %>%
-  na.omit() %>%
   ungroup()
 
-# vars_net <- abandonCars %>%
-#   spatially join abandonCars points to the fishnet polygon they are within %>%
-#   drop the geometry attribute %>%
-#   group_by each cells ID and the name of the feature %>%
-#   summarize count the number of each point per grid cell %>%
-#   join that summary back to spatial fishnet by cell ID %>%
-#   "spread" from long to wide format and make column of our point count %>%
-#   tell R that this should be an sf object %>%
-#   remove a fussy column that appears b/c of NA %>%
-#   get rid of rows with an NA in any column %>%
-#   remove grouping so you are not tripped up later
+
 ```
 
 ## Nearest Neighbor Feature
@@ -459,17 +467,21 @@ burglaries18 <-
 ```
 
 ```{r}
-burg_KDE_sf <- as.data.frame(burg_KD.1000) %>%
+
+burg_KDE_sum <- as.data.frame(burg_KD.1000) %>%
   st_as_sf(coords = c("x", "y"), crs = st_crs(final_net)) %>%
-  aggregate(., final_net, mean) %>%
+  aggregate(., final_net, mean) 
+kde_breaks <- classIntervals(burg_KDE_sum$value, 
+                             n = 5, "fisher")
+burg_KDE_sf <- burg_KDE_sum %>%
   mutate(label = "Kernel Density",
-         Risk_Category = ntile(value, 100),
+         Risk_Category = classInt::findCols(kde_breaks),
          Risk_Category = case_when(
-           Risk_Category >= 90 ~ "90% to 100%",
-           Risk_Category >= 70 & Risk_Category <= 89 ~ "70% to 89%",
-           Risk_Category >= 50 & Risk_Category <= 69 ~ "50% to 69%",
-           Risk_Category >= 30 & Risk_Category <= 49 ~ "30% to 49%",
-           Risk_Category >= 1 & Risk_Category  <= 29 ~ "1% to 29%")) %>%
+           Risk_Category == 5 ~ "5th",
+           Risk_Category == 4 ~ "4th",
+           Risk_Category == 3 ~ "3rd",
+           Risk_Category == 2 ~ "2nd",
+           Risk_Category == 1 ~ "1st")) %>%
   cbind(
     aggregate(
       dplyr::select(burglaries18) %>% mutate(burgCount = 1), ., sum) %>%
@@ -480,16 +492,18 @@ burg_KDE_sf <- as.data.frame(burg_KD.1000) %>%
 Note that this is different from the book, where we pull a model out of a list of models we've created. For your homework, you'll be creating multiple models.
 
 ```{r}
+ml_breaks <- classIntervals(reg.ss.spatialCV$Prediction, 
+                             n = 5, "fisher")
 burg_risk_sf <-
   reg.ss.spatialCV %>%
   mutate(label = "Risk Predictions",
-         Risk_Category = ntile(Prediction, 100),
+         Risk_Category =classInt::findCols(ml_breaks),
          Risk_Category = case_when(
-         Risk_Category >= 90 ~ "90% to 100%",
-         Risk_Category >= 70 & Risk_Category <= 89 ~ "70% to 89%",
-         Risk_Category >= 50 & Risk_Category <= 69 ~ "50% to 69%",
-         Risk_Category >= 30 & Risk_Category <= 49 ~ "30% to 49%",
-         Risk_Category >= 1 & Risk_Category <= 29 ~ "1% to 29%")) %>%
+           Risk_Category == 5 ~ "5th",
+           Risk_Category == 4 ~ "4th",
+           Risk_Category == 3 ~ "3rd",
+           Risk_Category == 2 ~ "2nd",
+           Risk_Category == 1 ~ "1st")) %>%
   cbind(
     aggregate(
       dplyr::select(burglaries18) %>% mutate(burgCount = 1), ., sum) %>%
@@ -515,16 +529,19 @@ rbind(burg_KDE_sf, burg_risk_sf) %>%
 
 ```{r}
 rbind(burg_KDE_sf, burg_risk_sf) %>%
-  st_set_geometry(NULL) %>% na.omit() %>%
+  st_drop_geometry() %>%
+  na.omit() %>%
   gather(Variable, Value, -label, -Risk_Category) %>%
   group_by(label, Risk_Category) %>%
   summarize(countBurglaries = sum(Value)) %>%
   ungroup() %>%
   group_by(label) %>%
-  mutate(Rate_of_test_set_crimes = countBurglaries / sum(countBurglaries)) %>%
-    ggplot(aes(Risk_Category,Rate_of_test_set_crimes)) +
+  mutate(Pcnt_of_test_set_crimes = countBurglaries / sum(countBurglaries)) %>%
+    ggplot(aes(Risk_Category,Pcnt_of_test_set_crimes)) +
       geom_bar(aes(fill=label), position="dodge", stat="identity") +
-      scale_fill_viridis(discrete = TRUE) +
-      labs(title = "Risk prediction vs. Kernel density, 2018 burglaries") +
+      scale_fill_viridis(discrete = TRUE, name = "Model") +
+      labs(title = "Risk prediction vs. Kernel density, 2018 burglaries",
+           y = "% of Test Set Burglaries (per model)",
+           x = "Risk Category") +
       theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
 ```
