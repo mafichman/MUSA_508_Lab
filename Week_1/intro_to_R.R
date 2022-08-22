@@ -20,7 +20,7 @@
 
 # ----- How do you run code in R? ------
 
-# Let's examine the R Studio enviornment.
+# Let's examine the R Studio environment.
 
 # Code with a "#" is called "commented code"
 

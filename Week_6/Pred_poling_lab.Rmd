@@ -543,5 +543,6 @@ rbind(burg_KDE_sf, burg_risk_sf) %>%
       labs(title = "Risk prediction vs. Kernel density, 2018 burglaries",
            y = "% of Test Set Burglaries (per model)",
            x = "Risk Category") +
+  theme_bw() +
       theme(axis.text.x = element_text(angle = 45, vjust = 0.5))
 ```

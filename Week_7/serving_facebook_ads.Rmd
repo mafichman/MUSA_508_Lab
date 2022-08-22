@@ -1,7 +1,7 @@
 ---
 title: "People Based ML - Serving Facebook Ads"
-author: "Michael Fichman & Ken Steif"
-date: "October 16, 2020"
+author: "Michael Fichman, Matt Harris & Ken Steif"
+date: "September 18,2022"
 output:
   html_document:
     toc: true
@@ -48,7 +48,7 @@ palette4 <- c("#981FAC","#FF006A","#FE4C35","#FE9900")
 palette2 <- c("#981FAC","#FF006A")
 
 
-advertising <- read.csv("~/GitHub/MUSA_508_Lab/Week_7/advertising_clean.csv")
+advertising <- read.csv(file.path("advertising_clean.csv"))
 
 ```
 
@@ -69,7 +69,7 @@ advertising %>%
   dplyr::select(click,Area_Income, Time_On_FB, Daily_Internet_Usage, Age) %>%
   gather(Variable, value, -click) %>%
     ggplot(aes(click, value, fill=click)) + 
-      geom_bar(position = "dodge", stat = "summary", fun.y = "mean") + 
+      geom_bar(position = "dodge", stat = "summary", fun = "mean") + 
       facet_wrap(~Variable, scales = "free") +
       scale_fill_manual(values = palette2) +
       labs(x="Click", y="Value", 
@@ -247,7 +247,7 @@ auc(testProbs$Outcome, testProbs$Probs)
 ```
 
 ```{r roc_curve, warning = FALSE, message = FALSE}
-ggplot(testProbs, aes(d = as.numeric(testProbs$Outcome), m = Probs)) +
+ggplot(testProbs, aes(d = as.numeric(Outcome), m = Probs)) +
   geom_roc(n.cuts = 50, labels = FALSE, colour = "#FE9900") +
   style_roc(theme = theme_grey) +
   geom_abline(slope = 1, intercept = 0, size = 1.5, color = 'grey') +

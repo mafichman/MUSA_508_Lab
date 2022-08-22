@@ -97,7 +97,7 @@ Load your census API key so we can grab stuff from `tidycensus`
 
 ```{r install_census_API_key, warning = FALSE, include=FALSE, eval = TRUE}
 # Install Census API Key
-census_api_key("e79f3706b6d61249968c6ce88794f6f556e5bf3d", overwrite = TRUE)
+tidycensus::census_api_key("e79f3706b6d61249968c6ce88794f6f556e5bf3d", overwrite = TRUE)
 ```
 
 ```{r install_census_API_key_falsecode, eval = FALSE, warning=FALSE}

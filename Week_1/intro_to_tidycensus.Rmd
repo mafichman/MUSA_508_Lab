@@ -16,9 +16,9 @@ library(rmarkdown)
 
 # Introduction
 
-This tutorial will introduce you to the use of R for US Census data. This code uses the `tidycensus` pacakge to query the US Census Bureau's Application Programming Interface (API). An API is, roughly, a "place" on the internet which you can interact with using a computer program. In our case, we will interact with an API which allows us access to US Census Data - this is the same data library that the Census' own website uses.
+This tutorial will introduce you to the use of R for US Census data. This code uses the `tidycensus` package to query the US Census Bureau's Application Programming Interface (API). An API is, roughly, a "place" on the internet which you can interact with using a computer program. In our case, we will interact with an API which allows us access to US Census Data - this is the same data library that the Census' own website uses.
 
-Perhaps more importantly, this tutorial introduces you to the `tidyverse` world of libraries - the best data wrangling, summarizing and visualizing tools available in R. These packages are designed to "play nice" with each other - none of them use the same function names and they are maintained together by a team of developers to mkae sure they work well.
+Perhaps more importantly, this tutorial introduces you to the `tidyverse` world of libraries - the best data wrangling, summarizing and visualizing tools available in R. These packages are designed to "play nice" with each other - none of them use the same function names and they are maintained together by a team of developers to make sure they work well.
 
 R Studio publishes handy "cheat sheets" for popular R libraries, including [data wrangling in the tidyverse](https://www.rstudio.com/wp-content/uploads/2015/02/data-wrangling-cheatsheet.pdf). 
 
@@ -59,10 +59,6 @@ library(sf)
 You will need a "key" to access the Census API. You can find one at [their website](https://api.census.gov/data/key_signup.html).
 
 Paste it into the code block below:
-
-```{r load_key_hide, warning= FALSE, include=FALSE}
-census_api_key("e79f3706b6d61249968c6ce88794f6f556e5bf3d", overwrite = TRUE)
-```
 
 ```{r load_key, warning = FALSE, eval = FALSE}
 census_api_key("YOUR KEY GOES HERE", overwrite = TRUE)

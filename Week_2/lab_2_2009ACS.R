@@ -226,10 +226,10 @@ septaStops <-
   rbind(
     st_read("https://opendata.arcgis.com/datasets/8c6e2575c8ad46eb887e6bb35825e1a6_0.geojson") %>% 
       mutate(Line = "El") %>%
-      select(Station, Line),
+      dplyr::select(Station, Line),
     st_read("https://opendata.arcgis.com/datasets/2e9037fd5bef406488ffe5bb67d21312_0.geojson") %>%
       mutate(Line ="Broad_St") %>%
-      select(Station, Line)) %>%
+      dplyr::select(Station, Line)) %>%
   st_transform(st_crs(tracts09))  
 
 # Let's visualize it

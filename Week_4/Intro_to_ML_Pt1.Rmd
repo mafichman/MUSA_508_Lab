@@ -127,7 +127,7 @@ The first code in this block buffers each point in `boston.sf` by 660 ft and the
 
 The second block of code is using knn for averaging or summing values of a set number of (referred to as `k`) the nearest observations to each observation; it's *nearest neighbors*. With this, the model can understand the magnitude of values that are *near* each point. This adds a spatial signal to the model. 
 
-The function `nn_function()` takes two pairs of **coordinates** form two `sf` **point** objects. You will see the use of `st_c()` which is just a shorthand way to get the coordinates with the `st_coordinates()` function. You can see where `st_c()` is created. Using `st_c()` within `mutate` converts the points to longitude/latitude coordinate pairs for the `nn_function()` to work with. If you put *polygon* features in there, it will error. Instead you can use `st_c(st_centroid(YourPolygonSfObject))` to get nearest neighbors to a polygon centroid.
+<!-- The function `nn_function()` takes two pairs of **coordinates** form two `sf` **point** objects. You will see the use of `st_c()` which is just a shorthand way to get the coordinates with the `st_coordinates()` function. You can see where `st_c()` is created. Using `st_c()` within `mutate` converts the points to longitude/latitude coordinate pairs for the `nn_function()` to work with. If you put *polygon* features in there, it will error. Instead you can use `st_c(st_centroid(YourPolygonSfObject))` to get nearest neighbors to a polygon centroid. -->
 
 The number `k` in the `nn_function()` function is the number of neighbors to to values from that are then averaged. Different types of crime (or anything else you measure) will require different values of `k`. *You will have to think about this!*. What could be the importance of `k` when you are making knn features for a violent crime versus and nuisance crime?
 
@@ -140,16 +140,24 @@ boston.sf$crimes.Buffer <- boston.sf %>%
     pull(counter)
 
 ## Nearest Neighbor Feature
-st_c <- st_coordinates
 
 boston.sf <-
   boston.sf %>% 
     mutate(
-      crime_nn1 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 1),
-      crime_nn2 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 2), 
-      crime_nn3 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 3), 
-      crime_nn4 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 4), 
-      crime_nn5 = nn_function(st_c(boston.sf), st_c(bostonCrimes.sf), k = 5)) 
+      crime_nn1 = nn_function(st_coordinates(boston.sf), 
+                              st_coordinates(bostonCrimes.sf), k = 1),
+      
+      crime_nn2 = nn_function(st_coordinates(boston.sf), 
+                              st_coordinates(bostonCrimes.sf), k = 2), 
+      
+      crime_nn3 = nn_function(st_coordinates(boston.sf), 
+                              st_coordinates(bostonCrimes.sf), k = 3), 
+      
+      crime_nn4 = nn_function(st_coordinates(boston.sf), 
+                              st_coordinates(bostonCrimes.sf), k = 4), 
+      
+      crime_nn5 = nn_function(st_coordinates(boston.sf), 
+                              st_coordinates(bostonCrimes.sf), k = 5)) 
 ```
 
 ```{r assault density}
