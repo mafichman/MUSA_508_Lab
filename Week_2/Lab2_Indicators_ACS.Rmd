@@ -1,0 +1,488 @@
+---
+title: "Lab 2: Why Start With Indicators?"
+author: "Matt Harris & Michael Fichman"
+date: '2022-08-22'
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Why Start With Indicators?
+
+from Steif (2021), [Section
+1.1](https://urbanspatial.github.io/PublicPolicyAnalytics/TOD.html#why-start-with-indicators):
+This is an indicator - a stylized fact that gives simple insight into a
+complicated phenomena. Mastering indicators is critical for conveying
+nuanced context to non-technical audiences. Here are four suggestions on
+what makes a good indicator:
+
+-   A *relatable* indicator is typically motivated by a pressing policy
+    concern. "How is it possible that passenger rail in New York City
+    has such widespread delays, service suspensions, and rider
+    discontent?" A great indicator solicits interest from an audience.
+
+-   A *simple* indicator may be used as an exploratory tool in place of
+    more complex statistics. Simplicity helps the audience understand
+    the indicator's significance and keeps them engaged in the analysis.
+
+-   A *relative* indicator draws a contrast. "How can New York City
+    passenger rail, with the most trips, still loose more money than
+    each of the next ten largest cities?" Contextualizing an indicator
+    with a relevant comparison makes for greater impact.
+
+-   A *good* indicator typically generates more questions than answers.
+    Thus, a good indicator fits into a broader narrative which helps
+    motivate a more robust research agenda and ultimately, more applied
+    analytics.
+
+In this lab we will walk through:
+
+1.  Use {tidycensus} to gather ACS data for two different years
+
+2.  Visualize data and maps with {ggplot2}
+
+3.  Use the {sf} package for geospatial operations such as **union**,
+    **intersection** and **buffer**
+
+4.  Use maps and tables to analyze change over time *given* the products
+    of the geospatial operations
+
+### Load packages and functions
+
+```{r setup_packages, warning = FALSE, message = FALSE}
+# Load Libraries
+
+library(tidyverse)
+library(tidycensus)
+library(sf)
+library(kableExtra)
+
+options(scipen=999)
+options(tigris_class = "sf")
+
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
+
+palette5 <- c("#f0f9e8","#bae4bc","#7bccc4","#43a2ca","#0868ac")
+```
+
+```{r load_key, warning = FALSE, eval = FALSE}
+census_api_key("YOUR KEY GOES HERE", overwrite = TRUE)
+```
+
+### Use `get_acs()` to get 2016 ACS data
+
+Notice this returns "long" data - let's examine it
+
+```{r}
+tracts16 <-  
+  get_acs(geography = "tract",
+          variables = c("B25026_001E","B02001_002E",
+                        "B15001_050E","B15001_009E",
+                        "B19013_001E", "B25058_001E",
+                        "B06012_002E"), 
+          year=2016, state=42,
+          county=101, geometry=TRUE) %>% 
+  st_transform('ESRI:102728')
+```
+
+#### Wide data vs long data (and `spread`vs `gather`)
+
+Take a moment to think about the *shape* of data. The gif below is a
+visualization of **wide** vs. **long** data. The gif shows the same data
+transformed into two different shapes. You will do this often in when
+working with data. **Wide** data is a more common representation and is
+good for all forms of data analysis, including spatial data. In this
+data the `id` is not repeated in the table. On the other hand, **long**
+data is takes all the wide-data columns and makes them rows by repeating
+the `id` for each piece of data. The **long** format is often good for
+plotting and analytics over groups within the data; not as great with
+spatial data.
+
+![wide vs long
+data](https://www.garrickadenbuie.com/project/tidyexplain/images/tidyr-spread-gather.gif)
+
+By default, `get_acs()` returns **long** data where the `GEOID` is
+repeated for each of the acs `variables` requested. The `output`
+argument in `get_acs()` can be used to return data in a **wide** format.
+Or we can do that ourselves with the `spread()` and `gather()`
+functions.
+
+Let's examine each variable and the elements of an sf object
+
+```{r}
+glimpse(tracts16)
+```
+
+We create a new data frame consisting only of population
+
+```{r}
+
+totalPop16 <-
+  tracts16 %>%
+  filter(variable == "B25026_001")
+```
+
+Ways to examine the data
+
+```{r}
+nrow(totalPop16)
+
+names(totalPop16)
+
+head(totalPop16)
+
+glimpse(totalPop16)
+```
+
+### Using ggplot to map census data with {sf}
+
+Each plot adds more and more nuance and information
+
+Examine each to see what we've added each time
+
+Consult the text to understand the symbology schemes
+
+```{r}
+A <- 
+  ggplot() +
+  geom_sf(data = totalPop16, aes(fill = estimate)) +
+  theme(plot.title = element_text(size=22))
+
+B <- 
+  ggplot() +
+  geom_sf(data = totalPop16, aes(fill = q5(estimate))) +
+  theme(plot.title = element_text(size=22))
+
+C <-
+  ggplot() +
+  geom_sf(data = totalPop16, aes(fill = q5(estimate))) +
+  scale_fill_manual(values = palette5,
+                    labels = qBr(totalPop16, "estimate"),
+                    name = "Total\nPopluation\n(Quintile Breaks)") +
+  theme(plot.title = element_text(size=22))
+
+D <- 
+  ggplot() +
+  geom_sf(data = totalPop16, aes(fill = q5(estimate))) +
+  scale_fill_manual(values = palette5,
+                    labels = qBr(totalPop16, "estimate"),
+                    name = "Popluation\n(Quintile Breaks)") +
+  labs(title = "Total Population", subtitle = "Philadelphia; 2016") +
+  mapTheme() + theme(plot.title = element_text(size=22))
+```
+
+```{r}
+# Let's "spread" the data into wide form
+
+tracts16 <- 
+  tracts16 %>%
+  dplyr::select( -NAME, -moe) %>%
+  spread(variable, estimate) %>%
+  rename(TotalPop = B25026_001, 
+         Whites = B02001_002,
+         FemaleBachelors = B15001_050, 
+         MaleBachelors = B15001_009,
+         MedHHInc = B19013_001, 
+         MedRent = B25058_001,
+         TotalPoverty = B06012_002)
+
+
+# Let's create new rate variables using mutate
+
+tracts16 <- 
+  tracts16 %>%
+  mutate(pctWhite = ifelse(TotalPop > 0, Whites / TotalPop, 0),
+         pctBachelors = ifelse(TotalPop > 0, ((FemaleBachelors + MaleBachelors) / TotalPop), 0),
+         pctPoverty = ifelse(TotalPop > 0, TotalPoverty / TotalPop, 0),
+         year = "2016") %>%
+  dplyr::select(-Whites,-FemaleBachelors,-MaleBachelors,-TotalPoverty)
+```
+
+Tracts 2016 is now complete. Let's grab 2020 tracts and do a congruent
+set of operations
+
+### 2020 Census Data
+
+Notice that we are getting "wide" data here in the first place This
+saves us the trouble of using "spread"
+
+```{r}
+tracts20 <- 
+  get_acs(geography = "tract", variables = c("B25026_001E","B02001_002E","B15001_050E",
+                                             "B15001_009E","B19013_001E","B25058_001E",
+                                             "B06012_002E"), 
+          year=2020, state=42, county=101, geometry=T, output="wide") %>%
+  st_transform('ESRI:102728') %>%
+  rename(TotalPop = B25026_001E, 
+         Whites = B02001_002E,
+         FemaleBachelors = B15001_050E, 
+         MaleBachelors = B15001_009E,
+         MedHHInc = B19013_001E, 
+         MedRent = B25058_001E,
+         TotalPoverty = B06012_002E) %>%
+  dplyr::select(-NAME, -starts_with("B")) %>%
+  mutate(pctWhite = ifelse(TotalPop > 0, Whites / TotalPop,0),
+         pctBachelors = ifelse(TotalPop > 0, ((FemaleBachelors + MaleBachelors) / TotalPop),0),
+         pctPoverty = ifelse(TotalPop > 0, TotalPoverty / TotalPop, 0),
+         year = "2020") %>%
+  dplyr::select(-Whites, -FemaleBachelors, -MaleBachelors, -TotalPoverty) 
+```
+
+```{r}
+
+allTracts <- rbind(tracts16,tracts20)
+```
+
+### Wrangling Transit Open Data
+
+```{r}
+
+septaStops <- 
+  rbind(
+    st_read("https://opendata.arcgis.com/datasets/8c6e2575c8ad46eb887e6bb35825e1a6_0.geojson") %>% 
+      mutate(Line = "El") %>%
+      dplyr::select(Station, Line),
+    st_read("https://opendata.arcgis.com/datasets/2e9037fd5bef406488ffe5bb67d21312_0.geojson") %>%
+      mutate(Line ="Broad_St") %>%
+      dplyr::select(Station, Line)) %>%
+  st_transform(st_crs(tracts16))  
+```
+
+Let's visualize it
+
+```{r}
+
+
+ggplot() + 
+  geom_sf(data=st_union(tracts16)) +
+  geom_sf(data=septaStops, 
+          aes(colour = Line), 
+          show.legend = "point", size= 2) +
+  scale_colour_manual(values = c("orange","blue")) +
+  labs(title="Septa Stops", 
+       subtitle="Philadelphia, PA", 
+       caption="Figure 2.5") +
+  mapTheme()
+```
+
+### --- Relating SEPTA Stops and Tracts ----
+
+Create buffers (in feet - note the CRS) around Septa stops - Both a
+buffer for each stop, and a union of the buffers... and bind these
+objects together
+
+Let's do this in pieces to understand this hefty code chunk
+
+We put them in the same data frame... why?
+
+```{r}
+
+septaBuffers <- 
+  rbind(
+    st_buffer(septaStops, 2640) %>%
+      mutate(Legend = "Buffer") %>%
+      dplyr::select(Legend),
+    st_union(st_buffer(septaStops, 2640)) %>%
+      st_sf() %>%
+      mutate(Legend = "Unioned Buffer"))
+```
+
+Let's examine both buffers by making a small multiple "facet_wrap" plot
+showing each
+
+```{r}
+ggplot() +
+  geom_sf(data=septaBuffers) +
+  geom_sf(data=septaStops, show.legend = "point") +
+  facet_wrap(~Legend) + 
+  labs(caption = "Figure 2.6") +
+  mapTheme()
+```
+
+### ---- Spatial operations ----
+
+Consult the text to understand the difference between these three types
+of joins and discuss which is likely appropriate for this analysis
+
+Create an sf object with ONLY the unioned buffer
+
+```{r}
+buffer <- filter(septaBuffers, Legend=="Unioned Buffer")
+```
+
+Clip the 2016 tracts ... by seeing which tracts intersect with the
+buffer and clipping out only those areas if you get a warning about
+"attribute variables are assumed..." don't worry about it.
+
+```{r}
+clip <- 
+  st_intersection(buffer, tracts16) %>%
+  dplyr::select(TotalPop) %>%
+  mutate(Selection_Type = "Clip")
+
+# Do a spatial selection to see which tracts touch the buffer
+
+# approach #1: sub-setting a spatial object with a spatial object using the '[' brackets.
+selection1 <- 
+  tracts16[buffer,] %>%
+  dplyr::select(TotalPop) %>%
+  mutate(Selection_Type = "Spatial Selection")
+
+# approach #2: using `st_intersects` as a verbose way to do approach #1
+selection2 <- tracts16[st_intersects(tracts16, buffer) %>% lengths > 0, ] %>%
+  dplyr::select(TotalPop) %>%
+  mutate(Selection_Type = "Spatial Selection")
+
+# approach #3: use `st_join` to do a spatial join and remove the non-intersecting polygons
+selection3 <- tracts16 %>% 
+  st_join(buffer, join = st_intersects) %>% 
+  filter(!is.na(Legend)) %>% 
+  dplyr::select(TotalPop) %>%
+  mutate(Selection_Type = "Spatial Selection")
+
+
+```
+
+Do a centroid-in-polygon join to see which tracts have their centroid in
+the buffer Note the st_centroid call creating centroids for each feature
+
+Let's go through this in pieces to understand what's happening here if
+you get a warning about "st_centroid assumes attributes..." don't worry
+about it.
+
+```{r}
+selectCentroids <-
+  st_centroid(tracts16)[buffer,] %>%
+  st_drop_geometry() %>%
+  left_join(., dplyr::select(tracts16, GEOID)) %>%
+  st_sf() %>%
+  dplyr::select(TotalPop) %>%
+  mutate(Selection_Type = "Select by Centroids")
+```
+
+## Exercise - Can you create a small multiple map of the three types of operations?
+
+Consult the text for some operations you can try This is to be done in
+breakout groups
+
+---- Indicator Maps ----
+
+We do our centroid joins as above, and then do a "disjoin" to get the
+ones that *don't* join, and add them all together. Do this operation and
+then examine it. What represents the joins/doesn't join dichotomy? Note
+that this contains a correct 2009-2020 inflation calculation
+
+```{r}
+allTracts.group <- 
+  rbind(
+    st_centroid(allTracts)[buffer,] %>%
+      st_drop_geometry() %>%
+      left_join(allTracts) %>%
+      st_sf() %>%
+      mutate(TOD = "TOD"),
+    st_centroid(allTracts)[buffer, op = st_disjoint] %>%
+      st_drop_geometry() %>%
+      left_join(allTracts) %>%
+      st_sf() %>%
+      mutate(TOD = "Non-TOD")) %>%
+  mutate(MedRent.inf = ifelse(year == "2009", MedRent * 1.14, MedRent)) 
+
+```
+
+Can you try to create the maps seen in the text? The solutions are
+contained in "map_exercise.R"
+
+--- TOD Indicator Tables ----
+
+```{r}
+allTracts.Summary <- 
+  st_drop_geometry(allTracts.group) %>%
+  group_by(year, TOD) %>%
+  summarize(Rent = mean(MedRent, na.rm = T),
+            Population = mean(TotalPop, na.rm = T),
+            Percent_White = mean(pctWhite, na.rm = T),
+            Percent_Bach = mean(pctBachelors, na.rm = T),
+            Percent_Poverty = mean(pctPoverty, na.rm = T))
+
+kable(allTracts.Summary) %>%
+  kable_styling() %>%
+  footnote(general_title = "\n",
+           general = "Table 2.2")
+```
+
+Let's make some comparisons and speculate about the willingness to pay
+and demographics in these areas 2009-2020 (see the 2000 data in the text
+too)
+
+Notice how we pipe the kable() command here
+
+```{r}
+allTracts.Summary %>%
+  unite(year.TOD, year, TOD, sep = ": ", remove = T) %>%
+  gather(Variable, Value, -year.TOD) %>%
+  mutate(Value = round(Value, 2)) %>%
+  spread(year.TOD, Value) %>%
+  kable() %>%
+  kable_styling() %>%
+  footnote(general_title = "\n",
+           general = "Table 2.3")
+```
+
+--- TOD Indicator Plots ------
+
+Let's create small multiple plots We use the "gather" command (look this
+one up please) To go from wide to long Why do we do this?? Notice we can
+"pipe" a ggplot call right into this operation!
+
+```{r}
+allTracts.Summary %>%
+  gather(Variable, Value, -year, -TOD) %>%
+  ggplot(aes(year, Value, fill = TOD)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Variable, scales = "free", ncol=5) +
+  scale_fill_manual(values = c("#bae4bc", "#0868ac")) +
+  labs(title = "Indicator differences across time and space") +
+  plotTheme() + theme(legend.position="bottom")
+```
+
+Examining three submarkets
+
+```{r}
+centerCity <-
+  st_intersection(
+    st_buffer(filter(septaStops, Line == "El"), 2640) %>% st_union(),
+    st_buffer(filter(septaStops, Line == "Broad_St"), 2640) %>% st_union()) %>%
+  st_sf() %>%
+  mutate(Submarket = "Center City")
+
+el <-
+  st_buffer(filter(septaStops, Line == "El"), 2640) %>% st_union() %>%
+  st_sf() %>%
+  st_difference(centerCity) %>%
+  mutate(Submarket = "El")
+
+broad.st <-
+  st_buffer(filter(septaStops, Line == "Broad_St"), 2640) %>% st_union() %>%
+  st_sf() %>%
+  st_difference(centerCity) %>%
+  mutate(Submarket = "Broad Street")
+
+threeMarkets <- rbind(el, broad.st, centerCity)
+```
+
+You can then bind these buffers to tracts and map them or make small
+multiple plots
+
+```{r}
+allTracts.threeMarkets <-
+  st_join(st_centroid(allTracts), threeMarkets) %>%
+  st_drop_geometry() %>%
+  left_join(allTracts) %>%
+  mutate(Submarket = replace_na(Submarket, "Non-TOD")) %>%
+  st_sf() 
+```
