@@ -78,7 +78,7 @@ census_api_key("YOUR KEY GOES HERE", overwrite = TRUE)
 
 Notice this returns "long" data - let's examine it
 
-```{r}
+```{r results='hide'}
 tracts16 <-  
   get_acs(geography = "tract",
           variables = c("B25026_001E","B02001_002E",
@@ -211,7 +211,7 @@ set of operations
 Notice that we are getting "wide" data here in the first place This
 saves us the trouble of using "spread"
 
-```{r}
+```{r results='hide'}
 tracts20 <- 
   get_acs(geography = "tract", variables = c("B25026_001E","B02001_002E","B15001_050E",
                                              "B15001_009E","B19013_001E","B25058_001E",
