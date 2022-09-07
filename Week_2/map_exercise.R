@@ -1,8 +1,8 @@
 myData  <- rbind(selectCentroids, clip) %>%
-  rbind(., selection)
+  rbind(., selection1)
 
 ggplot(myData)+
-  geom_sf(data = st_union(tracts09))+
+  geom_sf(data = st_union(tracts16))+
   geom_sf(aes(fill = q5(TotalPop))) +
   scale_fill_manual(values = palette5,
                     labels = qBr(myData, "TotalPop"),
@@ -16,7 +16,7 @@ ggplot(myData)+
   # 1.3.1 Maps
   
   ggplot(allTracts.group)+
-    geom_sf(data = st_union(tracts09))+
+    geom_sf(data = st_union(tracts16))+
     geom_sf(aes(fill = TOD)) +
     labs(title = "Time/Space Groups") +
     facet_wrap(~year)+
@@ -25,7 +25,7 @@ ggplot(myData)+
   
   
   ggplot(allTracts.group)+
-    geom_sf(data = st_union(tracts09))+
+    geom_sf(data = st_union(tracts16))+
     geom_sf(aes(fill = q5(MedRent.inf))) +
     geom_sf(data = buffer, fill = "transparent", color = "red")+
     scale_fill_manual(values = palette5,
@@ -41,7 +41,7 @@ ggplot(myData)+
 # As a map
     
 ggplot(allTracts.threeMarkets)+
-  geom_sf(data = st_union(tracts09))+
+  geom_sf(data = st_union(tracts16))+
   geom_sf(aes(fill = Submarket))+
   scale_fill_manual(values = c("orange", "green", "blue", "black"))+
   labs(title = "Three Submarkets As Tracts") +

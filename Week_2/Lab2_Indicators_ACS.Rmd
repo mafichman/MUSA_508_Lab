@@ -270,7 +270,7 @@ ggplot() +
   mapTheme()
 ```
 
-### --- Relating SEPTA Stops and Tracts ----
+### Relating SEPTA Stops and Tracts
 
 Create buffers (in feet - note the CRS) around Septa stops - Both a
 buffer for each stop, and a union of the buffers... and bind these
@@ -304,7 +304,7 @@ ggplot() +
   mapTheme()
 ```
 
-### ---- Spatial operations ----
+### Spatial operations
 
 Consult the text to understand the difference between these three types
 of joins and discuss which is likely appropriate for this analysis
