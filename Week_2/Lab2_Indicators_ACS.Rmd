@@ -145,7 +145,10 @@ Each plot adds more and more nuance and information
 
 Examine each to see what we've added each time
 
-Consult the text to understand the symbology schemes
+Consult the textbook to understand the symbology schemes.
+
+(Note: the `qBr()` function used here is an update to the one used
+version used in the text book so the results may appear different.)
 
 ```{r}
 A <- 
@@ -176,6 +179,15 @@ D <-
   mapTheme() + theme(plot.title = element_text(size=22))
 ```
 
+### Working with ACS Data
+
+Here we will modify the 2016 ACS by using `spread()` to widen the data
+so that each census variable is now a column. We will use `rename()` to
+give sensible names to the columns and we will use `mutate()` to make
+new features out of the existing columns. These are all steps we had
+introduced in Lab 1, except here we are doing it on {sf} spatial data
+frames.
+
 ```{r}
 # Let's "spread" the data into wide form
 
@@ -203,20 +215,27 @@ tracts16 <-
   dplyr::select(-Whites,-FemaleBachelors,-MaleBachelors,-TotalPoverty)
 ```
 
-Tracts 2016 is now complete. Let's grab 2020 tracts and do a congruent
-set of operations
+Tracts 2016 is now complete. Let's grab 2020 tracts and do the same
+thing.
 
 ### 2020 Census Data
 
 Notice that we are getting "wide" data here in the first place This
-saves us the trouble of using "spread"
+saves us the trouble of using "spread". We do this by using the
+`output="wide"` argument to `get_acs()`. IN previous code chunks we
+split the use of `get_acs()` to download the data from the use of
+`mutate()` and other {dplyr} functions. Here we put the entire process
+into one continuous sequence of code using the "pipe" operator `%>%`.
 
 ```{r results='hide'}
 tracts20 <- 
-  get_acs(geography = "tract", variables = c("B25026_001E","B02001_002E","B15001_050E",
-                                             "B15001_009E","B19013_001E","B25058_001E",
-                                             "B06012_002E"), 
-          year=2020, state=42, county=101, geometry=T, output="wide") %>%
+  get_acs(geography = "tract", 
+          variables = c("B25026_001E","B02001_002E",
+                        "B15001_050E","B15001_009E",
+                        "B19013_001E","B25058_001E",
+                        "B06012_002E"), 
+          year=2020, state=42, county=101, 
+          geometry=TRUE, output="wide") %>%
   st_transform('ESRI:102728') %>%
   rename(TotalPop = B25026_001E, 
          Whites = B02001_002E,
@@ -232,6 +251,12 @@ tracts20 <-
          year = "2020") %>%
   dplyr::select(-Whites, -FemaleBachelors, -MaleBachelors, -TotalPoverty) 
 ```
+
+To combine the 2016 and 2020 data into the same data frame we use
+`rbind()`. The "r" in `rbind()` stands for "row". So this function
+"binds rows of two or more data frames". Similarity the `cbind()`
+function binds columns of data frames, but that function is not used in
+this lab.
 
 ```{r}
 
@@ -256,7 +281,6 @@ septaStops <-
 Let's visualize it
 
 ```{r}
-
 
 ggplot() + 
   geom_sf(data=st_union(tracts16)) +
@@ -292,8 +316,11 @@ septaBuffers <-
       mutate(Legend = "Unioned Buffer"))
 ```
 
-Let's examine both buffers by making a small multiple "facet_wrap" plot
-showing each
+Let's examine both buffers by making a "[small
+multiples](https://www.juiceanalytics.com/writing/better-know-visualization-small-multiples)"
+plot. This type of plot shows multiple views of the same data or
+geographic area. We accomplish this by using the `facet_wrap()`
+{ggplot2} function on the *Legend* column.
 
 ```{r}
 ggplot() +
@@ -304,26 +331,85 @@ ggplot() +
   mapTheme()
 ```
 
-### Spatial operations
+### Using the `sf` Package for Spatial operations
 
 Consult the text to understand the difference between these three types
 of joins and discuss which is likely appropriate for this analysis
 
-Create an sf object with ONLY the unioned buffer
+Create an sf object with ONLY the unioned buffer from the `septaBuffers`
+spatial data frame.
 
 ```{r}
 buffer <- filter(septaBuffers, Legend=="Unioned Buffer")
 ```
 
-Clip the 2016 tracts ... by seeing which tracts intersect with the
-buffer and clipping out only those areas if you get a warning about
-"attribute variables are assumed..." don't worry about it.
+### Spatial Intersection of tracts and buffers
+
+In this section, we deep dive a bit into three different ways to achieve
+a similar output. Namely, what we are accomplishing is to select the
+tracts from `tracts16` that intersect the buffer of transit stop in
+`buffer` . The three different ways to think about this operation are:
+
+-   The intersection returns only the areas where both `buffer` and
+    `tracts16` polygons overlap. This is often referred to as "clipping"
+
+-   The intersection polygons are returns the full extend of any polygon
+    in `tracts16` that touch (or intersect) the `buffer`. There is no
+    clipping of the polygons
+
+    -   We will see three different ways to accomplish this particular
+        outcome
+
+-   The intersection of polygons to centroids returns the full extent of
+    any polygon in `tracts16` that has its center (called a centroid)
+    within the `buffer`
+
+The version of spatial intersection you chose will depend on the type of
+analysis you are doing. This concept is explained more deeply in the
+text book, lecture and labs.
+
+Note: you will likely get a warning about "attribute variables are
+assumed..." don't worry about it.
+
+#### Spatial Clipping with `st_intersection()` on polygons
 
 ```{r}
 clip <- 
   st_intersection(buffer, tracts16) %>%
   dplyr::select(TotalPop) %>%
   mutate(Selection_Type = "Clip")
+```
+
+#### Spatial intersection with `st_intersects()` on polygons
+
+Simply, this type of spatial selection returns any polygon that overlaps
+or touches the buffer. We try to keep our code examples concise in this
+course, but here we show three different ways to achieve the same
+outcome.
+
+1.  `selection1` uses `tracts16[buffer,]` uses the least code, but is
+    often confusing unless you know the {sf} package well. In this
+    usage, the intersecting rows of `tracts16` are selected for by
+    indexing on `buffer`. This method is very fast to compute, but hard
+    to understand at first.
+
+2.  `selection2` is a longhand way to do the same. This uses
+    `tracts16[st_intersects(tracts16, buffer) %>% lengths > 0, ]` to
+    spell out all of the steps used in the first method. This can be
+    read as: Select all rows of the rows from `tracts16` where
+    `st_intersects()` returns a length of greater than zero. Important
+    note that this uses `st_intersects()` and not `st_intersection()` as
+    in the previous section. This approach is just as fast as approach
+    #1, but a little easier to read.
+
+3.  `selection3` takes a different approach and uses `st_join()` with
+    the join type of "st_intersects". In this approach we need to follow
+    the join with `filter(!is.na(Legend))` to remove the rows of
+    `tracts16` where the polygons did not join. These are the polygons
+    that did not intersect. This approach is the most readable and
+    easiest to understand, but can be slower on large amounts of data.
+
+```{r spatialSelection}
 
 # Do a spatial selection to see which tracts touch the buffer
 
@@ -343,34 +429,63 @@ selection3 <- tracts16 %>%
   st_join(buffer, join = st_intersects) %>% 
   filter(!is.na(Legend)) %>% 
   dplyr::select(TotalPop) %>%
-  mutate(Selection_Type = "Spatial Selection")
-
-
+  mutate(Selection_Type = "Spatial Intersects")
 ```
 
-Do a centroid-in-polygon join to see which tracts have their centroid in
-the buffer Note the st_centroid call creating centroids for each feature
+#### Spatial intersection with with `st_centroid()` on polygon centroids
 
-Let's go through this in pieces to understand what's happening here if
-you get a warning about "st_centroid assumes attributes..." don't worry
-about it.
+Finally, we are using centroids, or the point at the center of a
+polygon, to select whether a polygon from `tracts16` intersects the
+`buffer`. The steps here are:
+
+1.  convert tract polygons to centroids and to the spatial intersect to
+    buffers using the `selection1` approach from above. The resulting
+    geometry type is now a point and not a polygon
+
+2.  drop the geometry so that is becomes a regular non-spatial data
+    frame
+
+3.  join the original `tracts16` data frame using the `GEOID` as the
+    join field. Note that only the `GEOID` column is selected, however
+    the polygon spatial features are also joined.
+
+4.  `st_sf()` is a function to turn it back to an {sf} spatial object
+
+5.  finally the `TotalPop` column is selected and a new field of
+    `Selection_Type` is added
+
+Note: you will get a warning about "st_centroid assumes attributes..."
+don't worry about it.
 
 ```{r}
 selectCentroids <-
   st_centroid(tracts16)[buffer,] %>%
   st_drop_geometry() %>%
-  left_join(., dplyr::select(tracts16, GEOID)) %>%
+  left_join(., dplyr::select(tracts16, GEOID), by = "GEOID") %>%
   st_sf() %>%
   dplyr::select(TotalPop) %>%
   mutate(Selection_Type = "Select by Centroids")
 ```
 
-## Exercise - Can you create a small multiple map of the three types of operations?
+Plotting the results of each method
+
+```{r}
+intersections <- rbind(clip, selection1, selectCentroids)
+
+ggplot() +
+  geom_sf(data=intersections, aes(fill = TotalPop)) +
+  geom_sf(data=septaStops, show.legend = "point") +
+  scale_fill_viridis_c() +
+  facet_wrap(~Selection_Type) + 
+  mapTheme()
+```
+
+## Bonus Exercise - Can you create a small multiple map of the three types of operations? (NOT GRADED)
 
 Consult the text for some operations you can try This is to be done in
 breakout groups
 
----- Indicator Maps ----
+### Indicator Maps
 
 We do our centroid joins as above, and then do a "disjoin" to get the
 ones that *don't* join, and add them all together. Do this operation and
@@ -397,7 +512,7 @@ allTracts.group <-
 Can you try to create the maps seen in the text? The solutions are
 contained in "map_exercise.R"
 
---- TOD Indicator Tables ----
+### TOD Indicator Tables
 
 ```{r}
 allTracts.Summary <- 
@@ -433,7 +548,7 @@ allTracts.Summary %>%
            general = "Table 2.3")
 ```
 
---- TOD Indicator Plots ------
+### TOD Indicator Plots
 
 Let's create small multiple plots We use the "gather" command (look this
 one up please) To go from wide to long Why do we do this?? Notice we can
@@ -450,7 +565,7 @@ allTracts.Summary %>%
   plotTheme() + theme(legend.position="bottom")
 ```
 
-Examining three submarkets
+#### Examining three submarkets
 
 ```{r}
 centerCity <-
