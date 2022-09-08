@@ -9,6 +9,8 @@ output:
 
 ```{r setup, include=FALSE, cache = TRUE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
 library(knitr)
 library(kableExtra)
 library(rmarkdown)
@@ -71,6 +73,7 @@ Now that we have our census credentials loaded, we can start downloading informa
 What does this `load_variables` function do and why are we writing these things in the parentheses after the name of the function? If you want to know about a function in R, you can type the name of a package or function into the console like this: `??load_variables` and information will show up in the help window in your R Studio environment.
 
 ```{r load_variables, cache = TRUE}
+
 acs_variable_list.2020 <- load_variables(2020, #year
                                          "acs5", #five year ACS estimates
                                          cache = TRUE)
@@ -163,7 +166,7 @@ acsTractsPHL.2020 <- acsTractsPHL.2020 %>%
 
 acsTractsPHL.2020 <- acsTractsPHL.2020 %>%
   mutate(vacancyPct.2020 = total_vacant.2020/total_HU.2020,
-         pctWhite.2020 = total_White.2020/total_pop.2020)
+         pctWhite.2020   = total_White.2020/total_pop.2020)
 ```
 
 Let's grab the 2016 data and do the same operations, but now - let's *chain the piped operations directly to the API call and do it all at once*. The only difference here is that we are going to change the variable names to say "2016" in them, not "2020".
@@ -196,7 +199,8 @@ There are four kinds of joins - you can learn about them here: https://rpubs.com
 We are going to do a "left join," keeping all the observations from the left hand side of the join argument, and only those which match from the right. Ideally this consists of all of the observations from the right hand side considering we have the same geometries in 2016 and 2020.
 
 ```{r left_join_tracts, cache = TRUE}
-allACS <- left_join(acsTractsPHL.2016, acsTractsPHL.2020, by= c("GEOID"))
+allACS <- left_join(acsTractsPHL.2016, acsTractsPHL.2020,
+                    by= c("GEOID"))
 ```
 
 ## Doing column math using mutate
@@ -253,7 +257,7 @@ Make your own by changing the terms in the ggplot call - use a different variabl
 Notice that the `+` sign does the same work in ggplot that the `%>%` does in tidy code.
 
 ```{r ggplot_histogram_simple, warning = FALSE, cache = TRUE, message = FALSE}
-ggplot(allACS)+
+ggplot(allACS) +
   geom_histogram(aes(change_med_HH_Income))
   
 ```
