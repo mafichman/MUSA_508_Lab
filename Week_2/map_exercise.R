@@ -1,3 +1,7 @@
+### This is code to help replicate the TOD assignment plots from the textbook
+### you have to run the code in `Lab2_Indicators_ACS.RMD` first in order
+### to have the `tracts16`, `selection1` and other objects created.
+
 myData  <- rbind(selectCentroids, clip) %>%
   rbind(., selection1)
 
