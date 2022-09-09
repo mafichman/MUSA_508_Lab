@@ -490,7 +490,7 @@ breakout groups
 We do our centroid joins as above, and then do a "disjoin" to get the
 ones that *don't* join, and add them all together. Do this operation and
 then examine it. What represents the joins/doesn't join dichotomy? Note
-that this contains a correct 2009-2020 inflation calculation
+that this contains a correct 2016-2020 inflation calculation
 
 ```{r}
 allTracts.group <- 
@@ -601,3 +601,27 @@ allTracts.threeMarkets <-
   mutate(Submarket = replace_na(Submarket, "Non-TOD")) %>%
   st_sf() 
 ```
+
+### Example of using `multipleRingBuffer()` function
+
+```{r}
+allTracts <- rbind(tracts20,tracts16)
+
+allTracts.rings <-
+  st_join(st_centroid(dplyr::select(allTracts, GEOID, year)), 
+          multipleRingBuffer(st_union(septaStops), 47520, 2640)) %>%
+  st_drop_geometry() %>%
+  left_join(dplyr::select(allTracts, GEOID, MedRent, year), 
+            by=c("GEOID"="GEOID", "year"="year")) %>%
+  st_sf() %>%
+  mutate(distance = distance / 5280) #convert to miles
+
+  ggplot() +
+    geom_sf(data=multipleRingBuffer(st_union(septaStops), 47520, 2640)) +
+    geom_sf(data=septaStops, size=1) +
+    geom_sf(data=st_union(tracts20), fill=NA, size=1.2) +
+    labs(title="Half mile buffers") +
+    mapTheme()
+
+```
+
