@@ -154,12 +154,14 @@ version used in the text book so the results may appear different.)
 A <- 
   ggplot() +
   geom_sf(data = totalPop16, aes(fill = estimate)) +
-  theme(plot.title = element_text(size=22))
+  theme(
+    plot.title = element_text(size=22)
+    )
 
 B <- 
   ggplot() +
   geom_sf(data = totalPop16, aes(fill = q5(estimate))) +
-  theme(plot.title = element_text(size=22))
+  theme(plot.title = element_text(size=22)) 
 
 C <-
   ggplot() +
@@ -176,7 +178,8 @@ D <-
                     labels = qBr(totalPop16, "estimate"),
                     name = "Popluation\n(Quintile Breaks)") +
   labs(title = "Total Population", subtitle = "Philadelphia; 2016") +
-  mapTheme() + theme(plot.title = element_text(size=22))
+  mapTheme() + 
+  theme(plot.title = element_text(size=22))
 ```
 
 ### Working with ACS Data
@@ -194,7 +197,7 @@ frames.
 tracts16 <- 
   tracts16 %>%
   dplyr::select( -NAME, -moe) %>%
-  spread(variable, estimate) %>%
+  spread(key = variable, value = estimate) %>%
   rename(TotalPop = B25026_001, 
          Whites = B02001_002,
          FemaleBachelors = B15001_050, 
@@ -606,18 +609,21 @@ allTracts.threeMarkets <-
 
 ```{r}
 allTracts <- rbind(tracts20,tracts16)
+septa_MRB <- multipleRingBuffer(st_union(septaStops), 47520, 2640)
 
 allTracts.rings <-
-  st_join(st_centroid(dplyr::select(allTracts, GEOID, year)), 
-          multipleRingBuffer(st_union(septaStops), 47520, 2640)) %>%
+  st_join(st_centroid(dplyr::select(allTracts, GEOID, year)),
+          septa_MRB) %>%
   st_drop_geometry() %>%
   left_join(dplyr::select(allTracts, GEOID, MedRent, year), 
             by=c("GEOID"="GEOID", "year"="year")) %>%
   st_sf() %>%
   mutate(distance = distance / 5280) #convert to miles
 
+
+
   ggplot() +
-    geom_sf(data=multipleRingBuffer(st_union(septaStops), 47520, 2640)) +
+    geom_sf(data=septa_MRB) +
     geom_sf(data=septaStops, size=1) +
     geom_sf(data=st_union(tracts20), fill=NA, size=1.2) +
     labs(title="Half mile buffers") +
