@@ -1,7 +1,7 @@
 ---
 title: "MUSA 508 Lab 3"
-author: "Michael Fichman"
-date: "September, 2021"
+author: "Matthew Harris & Michael Fichman"
+date: "September, 2022"
 output:
   html_document:
     toc: true
@@ -150,6 +150,7 @@ ggplot() +
 
 # Join the Town info to the buffers
 Here `st_make_valid()` is used to fix inconsistencies in polygon geometry. Try running the code without `st_make_valid` and you will see an error about invalid geometry due to self-intersecting polygons.
+Note: You will see the warning message of `attribute variables are assumed to be spatially constant ...`. It is an informative warning and you will see it often working with {sf}, but you can ignore it.
 
 ```{r buffersAndTowns}
 buffersAndTowns <- 
