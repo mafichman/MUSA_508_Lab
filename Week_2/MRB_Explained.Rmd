@@ -1,0 +1,168 @@
+---
+title: "MRB Explained"
+author: "Matthew Harris"
+date: '2022-09-09'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+## MultipleRingBuffer() Explained
+
+This is a brief markdown to explain the `multipleRingBuffer()` function used in this class, labs and text book. This function results in multiple buffers around the points, lines or polygons that it is applied to. This is useful to aggregate values (e.g. rent, housing units, crime, etc...) at ever increasing distances from a place.
+
+The purpose of this markdown is to explain its use in more detail because it is not well explained in the lab.
+
+### Code Setup
+
+```{r setup_packages, warning = FALSE, message = FALSE}
+# Load Libraries
+
+library(tidyverse)
+library(tidycensus)
+library(sf)
+library(kableExtra)
+
+options(scipen=999)
+options(tigris_class = "sf")
+
+palette5 <- c("#f0f9e8","#bae4bc","#7bccc4","#43a2ca","#0868ac")
+```
+
+### Source MRB function from `functions.R`
+
+This line of code with `source(...)` is usually in your markdown setup chunks, but I am calling it out here specifically. The `source()` function makes code available in a separate R script available to you. Such as, the `functions.r` script that is sources here (from the book's landing page repo) contains a bunch of functions used throughout the course; including `mulitpleRingBuffer()`. Make sure you get your functions from the book via this method as I maintain `functions.R` in case any bugs come up.
+
+```{r}
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
+```
+
+**Note:** The text for the online version of the book has a small bug in the `multipleRIngBuffer()` function that could impact your work. The version of the function in `functions.R` has the bug fixed; so use that one.
+
+### Get Data
+
+The code below gets the ACS data and Septa stops and is pretty much identical to the code in the lab.
+
+```{r results='hide', cache=TRUE}
+# Census tracts and ACS data
+tracts20 <- 
+  get_acs(geography = "tract", 
+          variables = c("B25026_001E","B02001_002E",
+                        "B15001_050E","B15001_009E",
+                        "B19013_001E","B25058_001E",
+                        "B06012_002E"), 
+          year=2020, state=42, county=101, 
+          geometry=TRUE, output="wide") %>%
+  st_transform('ESRI:102728') %>%
+  rename(TotalPop = B25026_001E, 
+         Whites = B02001_002E,
+         FemaleBachelors = B15001_050E, 
+         MaleBachelors = B15001_009E,
+         MedHHInc = B19013_001E, 
+         MedRent = B25058_001E,
+         TotalPoverty = B06012_002E) %>%
+  dplyr::select(-NAME, -starts_with("B")) %>%
+  mutate(pctWhite = ifelse(TotalPop > 0, Whites / TotalPop,0),
+         pctBachelors = ifelse(TotalPop > 0, ((FemaleBachelors + MaleBachelors) / TotalPop),0),
+         pctPoverty = ifelse(TotalPop > 0, TotalPoverty / TotalPop, 0),
+         year = "2020") %>%
+  dplyr::select(-Whites, -FemaleBachelors, -MaleBachelors, -TotalPoverty) 
+
+# Septa and El stops
+septaStops <- 
+  rbind(
+    st_read("https://opendata.arcgis.com/datasets/8c6e2575c8ad46eb887e6bb35825e1a6_0.geojson") %>% 
+      mutate(Line = "El") %>%
+      dplyr::select(Station, Line),
+    st_read("https://opendata.arcgis.com/datasets/2e9037fd5bef406488ffe5bb67d21312_0.geojson") %>%
+      mutate(Line ="Broad_St") %>%
+      dplyr::select(Station, Line)) %>%
+  st_transform(st_crs(tracts20))  
+```
+
+### Compute MRB
+
+Here is where we use the `multipleRingBuffer()` function (MRB). The MRB has three arguments, **inputPolygon**, **maxDistance** and **interval.**
+
+-   `inputPolygon` is any {sf} object that is a point, line or polygon. READ the note about `st_union` below!
+
+-   `maxDistance` is the maximum distance to buffer our to. In this case it is `47,520 feet` . Be careful to not mix up your feet vs. meters! Make sure your {sf} object is properly projected and find out if it is measured in feet or meters
+
+-   `interval` is the distance of the buffers. The calculation to find the total number of buffers is `floor(maxDistance / interval)` . The `floor()` function rounds down the result, so if there is a remainder (i.e 9.8) buffer then it is rounded down (i.e. 9).
+
+**NOTE:** On the `st_union()`. You see that the MRB function is not called on just the *SeptaStops*, but instead `st_union(septaStops)`. This is because the *SeptaStops* object contains 52 rows of data; each a transit stop. If we ran MRB on that alone, we would get 18 buffers for each of the 52 stops; that is not what we want. Instead, we used `st_union()` to essentially merge the 52 stops into a single row of data representing all of the points. With this, MRB returns the union of all buffers of all points.
+
+```{r MRB}
+septa_MRB <- multipleRingBuffer(st_union(septaStops),
+                                maxDistance = 47520,
+                                interval =  2640)
+```
+
+#### Plot the MRB results
+
+```{r}
+ggplot() +
+    geom_sf(data=septa_MRB) +
+    geom_sf(data=septaStops, size=1) +
+    geom_sf(data=st_union(tracts20), fill=NA, size=1.2) +
+    labs(title="Half mile buffers") +
+    mapTheme()
+```
+
+#### Example of things gone wrong
+
+Here I am showing what happens within the `st_union()`, but only on 25 of the 52 stops.
+
+```{r}
+septa_MRB_wrong <- multipleRingBuffer(septaStops[1:25,],
+                                maxDistance = 47520,
+                                interval =  2640)
+
+ggplot() +
+    geom_sf(data=septa_MRB_wrong) +
+    geom_sf(data=septaStops, size=1) +
+    geom_sf(data=st_union(tracts20), fill=NA, size=1.2) +
+    labs(title="Half mile buffers") +
+    mapTheme()
+```
+
+### Summarizing data
+
+In order to do analysis with the rings, we need to join our census tracts data to the buffer ring that the tracts centroid lies within. We do this with the pattern we discussed in lab.
+
+1.  Join as one geometry type (here is it point/centroids)
+
+2.  Drop Geometry with `st_drop_geometry()`
+
+3.  Join to the desired geometry type (here as a table join on *GEOID* back to tracts as polygons)
+
+4.  Make an {sf} object with `st_sf()`
+
+This results in a table that is easy to summarize over buffer distance and/or year.
+
+```{r}
+
+tracts20.rings <- tracts20 %>% 
+  select(GEOID, year) %>% 
+  st_centroid() %>% 
+  st_join(septa_MRB, join = st_intersects) %>%
+  st_drop_geometry() %>%
+  left_join(dplyr::select(tracts20, GEOID, MedRent, year), 
+            by=c("GEOID"="GEOID", "year"="year")) %>%
+  st_sf() %>%
+  mutate(distance = distance / 5280) #convert to miles
+
+tracts20.rings.summary <- st_drop_geometry(tracts20.rings) %>%
+    group_by(distance, year) %>%
+    summarize(Mean_Rent = mean(MedRent, na.rm=T))
+
+ggplot(tracts20.rings.summary,
+       aes(distance, Mean_Rent, colour=year)) +
+      geom_point(size=3) + 
+  geom_line(size=2)
+
+```
