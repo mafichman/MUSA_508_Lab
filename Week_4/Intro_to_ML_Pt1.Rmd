@@ -4,8 +4,6 @@ author: "Harris, Fichman, and Steif - 2022/23"
 output: html_document
 ---
 
-# MUSA 508, Lab 4 - Spatial Machine Learning Pt. 1
-
 ```{r setup, include=FALSE}
 
 # You can set some global options for knitting chunks
@@ -38,7 +36,16 @@ source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-L
 palette5 <- c("#25CB10", "#5AB60C", "#8FA108",   "#C48C04", "#FA7800")
 ```
 
+# MUSA 508, Lab 4 - Spatial Machine Learning Pt. 1
 
+The learning objectives of this lab are:
+
+*   Review Topics: loading data, {dplyr}, mapping and plotting with {ggplot2}
+*   New: Understanding how we created spatial indicators with K-Nearest Neighbor and the `nn_function()` function
+*   Simple correlation and the Pearson's r - Correlation Coefficient
+*   Linear Regression model goodness-of-fit and R2 - Coefficient of Determination
+
+The in-class exercise at the end encourages students to modify the existing code to create a different regression and interpret it. Finally, there is a prompt to create a new feature and add it to the regression.
 
 ## Data Wrangling
 
@@ -68,7 +75,8 @@ bostonCrimes <- read.csv(file.path(root.dir,"/Chapter3_4/bostonCrimes.csv"))
 ```{r EDA}
 
 # finding counts by group
-group_by(bostonCrimes, OFFENSE_CODE_GROUP) %>%
+bostonCrimes %>% 
+group_by(OFFENSE_CODE_GROUP) %>%
   summarize(count = n()) %>%
   arrange(-count) %>% top_n(10) %>%
   kable() %>%
@@ -79,7 +87,7 @@ group_by(bostonCrimes, OFFENSE_CODE_GROUP) %>%
 
 See if you can alter the size of the image output. Search for adjusting figure height and width for a rmarkdown block
 
-```{r price_map, }
+```{r price_map}
 # ggplot, reorder
 
 # Mapping data
@@ -120,7 +128,7 @@ These are primary tools we use to add the local spatial signal to each of the po
 
 #### Buffer aggregate
 
-The first code in this block buffers each point in `boston.sf` by 660 ft and then uses `aggregate` to count the number of `bostonCrimes.sf` points within that buffer. There is a nested call to `mutate` to assign a value of `1` for each `bostonCrimes.sf` as under a column called `counter`. This allows each crime to have the same weight in when the `sun` function is called, but other weighting schemes could be used. Finally, the code `pull` pulls the aggregate values so they can be assigned as the `crimes.Buffer` column to `boston.sf`. This is a little different from how you had assigned new columns before (usually using `mutate`), but valid. Your new feature `crimes.Buffer` is a count of all the crimes within 660ft of each reported crime. Why would it be god to know this when building a model?  
+The first code in this block buffers each point in `boston.sf` by `660` ft and then uses `aggregate` to count the number of `bostonCrimes.sf` points within that buffer. There is a nested call to `mutate` to assign a value of `1` for each `bostonCrimes.sf` as under a column called `counter`. This allows each crime to have the same weight in when the `sun` function is called, but other weighting schemes could be used. Finally, the code `pull` pulls the aggregate values so they can be assigned as the `crimes.Buffer` column to `boston.sf`. This is a little different from how you had assigned new columns before (usually using `mutate`), but valid. Your new feature `crimes.Buffer` is a count of all the crimes within 660ft of each reported crime. Why would it be god to know this when building a model?  
 
 
 #### k nearest neighbor (knn)
@@ -167,7 +175,7 @@ ggplot() + geom_sf(data = nhoods, fill = "grey40") +
                  aes(X, Y, fill = ..level.., alpha = ..level..),
                  size = 0.01, bins = 40, geom = 'polygon') +
   scale_fill_gradient(low = "#25CB10", high = "#FA7800", name = "Density") +
-  scale_alpha(range = c(0.00, 0.35), guide = FALSE) +
+  scale_alpha(range = c(0.00, 0.35), guide = "none") +
   labs(title = "Density of Aggravated Assaults, Boston") +
   mapTheme()
 ```
