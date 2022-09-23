@@ -112,7 +112,7 @@ bostonCrimes.sf <-
            Lat > -1) %>%
     dplyr::select(Lat, Long) %>%
     na.omit() %>%
-    st_as_sf(coords = c("Long", "Lat"), crs = 4326, agr = "constant") %>%
+    st_as_sf(coords = c("Long", "Lat"), crs = "EPSG:4326") %>%
     st_transform('ESRI:102286') %>%
     distinct()
 
