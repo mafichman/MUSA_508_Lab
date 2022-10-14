@@ -112,7 +112,7 @@ bostonCrimes.sf <-
            Lat > -1) %>%
     dplyr::select(Lat, Long) %>%
     na.omit() %>%
-    st_as_sf(coords = c("Long", "Lat"), crs = 4326, agr = "constant") %>%
+    st_as_sf(coords = c("Long", "Lat"), crs = "EPSG:4326") %>%
     st_transform('ESRI:102286') %>%
     distinct()
 
@@ -328,13 +328,6 @@ predict(livingReg, newdata = data.frame(LivingArea = 4000))
 ```
 
 
-## plot of marginal regression response
-
-```{r effectPlot}
-effect_plot(livingReg, pred = LivingArea, interval = TRUE, plot.points = TRUE)
-```
-
-
 ## Multivariate Regression
 
 Let's take a look at this regression - how are we creating it?
@@ -353,7 +346,7 @@ reg1 <- lm(SalePrice ~ ., data = boston_sub_200k %>%
 summary(reg1)
 ```
 
-## Some cool coefficient plots from Matt
+## Marginal Response Plots
 
 Let's try some of these out. They help you learn more about the relationships in the model.
 
