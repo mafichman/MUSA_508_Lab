@@ -17,6 +17,8 @@ Our learning goals for today are:
 
 4. Compare model performance to Kernal Density as a "business-as-usual" alternative
 
+**Note that this code is different than the book - it has been updated and debugged to keep up with changes in packages and data sources used in this exercise. Please use this code as the basis for your homework, not the book code.**
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
 
