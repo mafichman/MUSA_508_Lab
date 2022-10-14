@@ -1,11 +1,21 @@
 ---
 title: 'ML #3 Predictive Policing'
 author: "Prof. Fichman & Prof. Harris"
-date: "08/15/2022"
+date: "10/14/2022"
 output: html_document
 ---
 
-We are going to run through the code base with just a couple variables in a model - in a slightly simplified workflow
+We are going to run through the code base with just a couple variables in a model - in a slightly simplified workflow.
+
+Our learning goals for today are:
+
+1. Learn how to build spatial variables in a raster-like grid called a "fishnet"
+
+2. Learn how to run local Moran's I as a measure of local clustering
+
+3. Run a poisson regression to predict events measured in counts
+
+4. Compare model performance to Kernal Density as a "business-as-usual" alternative
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
