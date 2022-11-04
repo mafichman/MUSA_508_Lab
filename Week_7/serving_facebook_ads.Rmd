@@ -13,13 +13,39 @@ output:
 knitr::opts_chunk$set(message = FALSE, warning = FALSE)
 ```
 
+# Learning Objectives
+
+This lab introduces **classification** as new task in modeling. As opposed to regression where we predict on continuous outcome, classification predicts the probability of one or many events. In this case, we're are only interested in one event; did a user click or not. We will use **Logistic Regression** with the `glm` function to fit this model. Additionally, this lab focuses on finding the correct **threshold** to use for assigning predictions to the classes of click or no-click. Finally, we will use a form of cost optimization to pick the best threshold.
+
+The policy related takeaway from this is that picking a threshold depends on how the predictions will be used in make policy. Much of the time, your job is not to simply make predictions, but to inform stakeholders of how those predictions should be used to implement policy. The lesson of applying a cost optimization method to your predictions is a very important tool in your toolbox.
+
+### Review
+
+-   `dplyr`, `ggplot2` and table joins
+
+-   creating data partitions and `caret`
+
+-   summarizing model objects and cross-validation
+
+### New skills:
+
+-   Using `glm` function and `family="binomial" (link="logit")` to fit a logistic regression models
+
+-   **Goodness-of-fit** metrics with logistic regression models
+
+-   creating a **confusion matrix** and understanding False/True Positives/Negatives
+
+-   Area under the ROC Curve (**AUC**) as a model accuracy metric
+
+-   **Cost-Benefit** optimization with a cost function on your predictions.
+
 # Use Case
 
 Your digital marketing agency is tasked with targeting Facebook users with an ad for a discount fashion brand. To test out a new advertising strategy, you serve an ad to 1000 randomly selected users and see who clicks. You are going to build a model based on their behavior (click or no click) and some attributes about them. We will try to describe and evaluate that model in the context of your business process.
 
 You will run through this code with a group (during live lab), or individually (if watching it recorded).
 
-**At various points, there are prompts for you to fill out - those are in bold text.  Keep a log of your answers - we will compare notes during or at the end of class.**
+**At various points, there are prompts for you to fill out - those are in bold text. Keep a log of your answers - we will compare notes during or at the end of class.**
 
 There is a more complex code base in the class textbook which forms the basis for your homework assignment - a cost/benefit problem involving subscriptions and mail vouchers - a more complex balance sheet. The code in this markdown is only lightly annotated. The textbook has a full annotation of the code and describes the details of logistic regression, goodness of fit metrics and more. This workshop mostly just deals with the process and interpretation.
 
@@ -27,7 +53,7 @@ There is a more complex code base in the class textbook which forms the basis fo
 
 Install libraries and load the data set `advertising`.
 
-These data come from a [Kaggle ML example data set]("https://www.kaggle.com/faressayah/logistic-regression-tutorial-predict-ad-click?select=advertising.csv") and are somewhat edited and contain added noise.
+These data come from a [Kaggle ML example data set](%22https://www.kaggle.com/faressayah/logistic-regression-tutorial-predict-ad-click?select=advertising.csv%22) and are somewhat edited and contain added noise.
 
 ```{r load_packages, warning = FALSE}
 options(scipen=10000000)
@@ -48,7 +74,7 @@ palette4 <- c("#981FAC","#FF006A","#FE4C35","#FE9900")
 palette2 <- c("#981FAC","#FF006A")
 
 
-advertising <- read.csv(file.path("advertising_clean.csv"))
+advertising <- read.csv(file.path("Week_7","advertising_clean.csv"))
 
 ```
 
@@ -60,7 +86,7 @@ Make some plots of our variables - both continuous and categorical. Examine thes
 
 ## Discussion 1:
 
-**What are some of the average characteristics of people who click on this ad?** 
+**What are some of the average characteristics of people who click on this ad?**
 
 **What are some of the ways in which clickers and non-clickers are different?**
 
@@ -162,7 +188,6 @@ summary(advertisingModel)
 
 Observe the output of the first model, and **using the code chunk below play around with the variables you decide to include and exclude. Run the model, and then the subsequent line of code which produces goodness of fit metrics.** How is your McFadden R-squared? It's kind of a pseudo-R-squared, not quite interpretable like R-squared for `lm` models. But the closer to 1, generally the better.
 
-
 ```{r second_model}
 advertisingModel <- glm(clickNumeric ~ .,
                   data=advertisingTrain %>% dplyr::select(-Country, -Timestamp, -click, -userTimeFrame,
@@ -210,7 +235,7 @@ ggplot(testProbs, aes(x = Probs, fill = as.factor(Outcome))) +
 
 # Confusion Matrix
 
-Each threshold (e.g. a probability above which a prediction is a "click" and below which it's a "no click") has it's own rate of error. These errors can be classified in four ways for a binary model. 
+Each threshold (e.g. a probability above which a prediction is a "click" and below which it's a "no click") has it's own rate of error. These errors can be classified in four ways for a binary model.
 
 A "confusion matrix" for the threshold of 50% shows us the rate at which we got True Positives (aka Sensitivity), False Positives, True Negatives (aka Specificity) and False Negatives for that threshold.
 
@@ -240,7 +265,7 @@ caret::confusionMatrix(testProbs$predOutcome, testProbs$Outcome,
 
 # ROC Curve
 
-The ROC curve, gives us another visual "goodness of fit" metric. One that is a bit more tricky. You want to have a curve that is "above" the y=x line, which is where your prediction rates for positives and negatives are "no better than a coin flip". If it's too "square" - you are probably over fit.  The Area-Under-The-Curve or "AUC" calculation below will help guide your understanding of the ROC curve
+The ROC curve, gives us another visual "goodness of fit" metric. One that is a bit more tricky. You want to have a curve that is "above" the y=x line, which is where your prediction rates for positives and negatives are "no better than a coin flip". If it's too "square" - you are probably over fit. The Area-Under-The-Curve or "AUC" calculation below will help guide your understanding of the ROC curve
 
 ```{r auc, message = FALSE, warning = FALSE}
 auc(testProbs$Outcome, testProbs$Probs)
@@ -262,7 +287,7 @@ Is it useful? Is it overfit? What does the y=x line represent?
 
 # Cross validation
 
-We run 100-fold cross validation and look at the ROC (aka AUC), Sensitivity and Specificity across this series of predicitons. How do they look? 
+We run 100-fold cross validation and look at the ROC (aka AUC), Sensitivity and Specificity across this series of predicitons. How do they look?
 
 Probably pretty, pretty good.
 
@@ -297,15 +322,15 @@ dplyr::select(cvFit$resample, -Resample) %>%
 
 This has all been building to an examination of the model in the context of our ad campaign. Let's set this up to estimate the revenues associated with using this model under the following scenario:
 
--An impression (serving an ad) costs $0.10
+-An impression (serving an ad) costs \$0.10
 
--A click brings an estimated $0.35 of revenue per visitor on average.
+-A click brings an estimated \$0.35 of revenue per visitor on average.
 
 ## Discussion 6
 
 Run the code below and look at the revenues associated with each prediction type. (Notice our `Revenue` calculation - for your assignment this will more closely resemble the calculation in the text book).
 
-**What is the rate of return per dollar spent?** 
+**What is the rate of return per dollar spent?**
 
 A clue to figuring this out - we only spend money for impressions on True Positives and False Positives, and we lost money with our False Negatives - hypothetically we spend nothing on True Negatives.
 
@@ -337,7 +362,7 @@ kable(cost_benefit_table,
 
 # Optimize Thresholds
 
-The last step to tuning our model is to run it for each threshold value. Recall that we chose 0.5 as the line above which a prediction is classified as a "click".  We can then look at the confusion matrices for each threshold and choose the one that returns the most revenue.
+The last step to tuning our model is to run it for each threshold value. Recall that we chose 0.5 as the line above which a prediction is classified as a "click". We can then look at the confusion matrices for each threshold and choose the one that returns the most revenue.
 
 The code below bakes in our cost-revenue calculations.
 
@@ -374,7 +399,6 @@ return(all_prediction)
 }
 ```
 
-
 ```{r revenue_model}
 whichThreshold <- iterateThresholds(testProbs2)
 
@@ -405,4 +429,4 @@ A fixed effect coefficient which exponentiates to a value of, say `0.25` would b
 
 For continuous variables the coefficients are interpreted as having a unit increase in the independent variable increase the likelihood of clicking by some percentage.
 
-For more on the coefficients associated with logistic regression, [read here]("https://rpubs.com/OmaymaS/182726").
+For more on the coefficients associated with logistic regression, [read here](%22https://rpubs.com/OmaymaS/182726%22).
