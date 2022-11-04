@@ -424,7 +424,7 @@ ride.panel <-
                                  dplyr::lead(holiday, 1) == 1 ~ "MinusOneDay",
                                  dplyr::lead(holiday, 2) == 1 ~ "MinusTwoDays",
                                  dplyr::lead(holiday, 3) == 1 ~ "MinusThreeDays"),
-         holidayLag = replace_na(holidayLag, 0))
+         holidayLag = ifelse(is.na(holidayLag) == TRUE, 0, holidayLag))
 
 ```
 
