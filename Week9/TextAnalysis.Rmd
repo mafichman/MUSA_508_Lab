@@ -1,0 +1,445 @@
+---
+title: "TextAnalysis"
+author: "Elizabeth Delmelle & Isabelle Nilsson"
+date: "2022-10-26"
+output: html_document
+---
+This lab will follow the general workflow describe in the article: 
+Delmelle, E. C., & Nilsson, I. (2021). The language of neighborhoods: A predictive-analytical framework based on property advertisement text and mortgage lending data. Computers, Environment and Urban Systems, 88, 101658.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+First load the libraries
+
+```{r load libraries}
+library(tidyverse)
+library(cluster)
+library(sf)
+library(factoextra)
+library(gridExtra)
+library(kableExtra)
+library(stringr)
+library(tidytext)
+library(yardstick)
+library(rsample)
+library(glmnet)
+library(broom)
+library(tmap)
+```
+
+Load the data - first 2010 census tracts from Charlotte then a csv file of data from the Home Mortgage Disclosure Act (HMDA) that has been aggregated to the census tract level.
+We then join the two based on the census tract ID.
+
+```{r load the data}
+clt_tracts <- st_read('CensusTracts2010.shp')
+hmda<- read.csv('hmda.csv')
+cltdata<- inner_join(clt_tracts, hmda, by = c("name10" = "tract"))
+
+```
+
+The workflow. First we will do a k-means clustering on the census tracts to classify them according to the racial and income profile of mortgage applicants in 2018 and the change in those characteristics between 2013 and 2018. This gives us a sense of who is moving in - or responding to the real estate ads - and how that has changed during a 5-year time period.
+
+```{r data formatting to prepare for clustering}
+cltdata <- cltdata %>% mutate_if(is.character,as.numeric)%>% dplyr::select( c("name10","Black18","White18","Hispanic18","med_income2018","chblack","chwhite","chincome","chhisp","minor_pop_pct")) %>% st_drop_geometry(.)%>%na.omit(.)
+
+```
+
+With our selected variables, the clustering proceeds as follows: First, we scale, or normalize, the data which puts everything on a scale with a mean of 0 and a standard deviation of 1. All variables in the algorithm need to be on the same measurement scale so they are all of equal weight for the next step - calculating the Euclidean distance between each census tract for the variables. We can visualize this distance matrix using the fviz function.
+
+For k-means, we need to provide k, or the number of groups that we want to segment our data into. This is kind of a judgement call based on a combination of statistics and local or study area knowledge. Ultimately, the goal of the algorithm is to sort the census tracts into groups that maximizes the difference between all the groups and that minimizes the difference in observations within the groups. We'll explore a few fit and then I'll override them because I know the city best! The computer has never lived there...
+
+The code is a clunky way to test out 4 different solutions (2-5 clusters). The nstart indicates that the algorithm will run with 25 different random initiations. k-means can be sensitive to the initial random solution. It also means we aren't all guaranteed to get the same solution each time or as your neighbor! We can set a random generator seed to alleviate that. 
+
+Which cluster solution would you choose?
+
+```{r kmeans}
+data_scaled<- scale(cltdata[2:10])
+distance <- get_dist(data_scaled)
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07")) ##Not all that useful, but gives a sense of what we are going to try to cluster in the next steps.
+set.seed(123)
+k2 <- kmeans(data_scaled, centers = 2, nstart = 25)
+k3 <- kmeans(data_scaled, centers = 3, nstart = 25)
+k4 <- kmeans(data_scaled, centers = 4, nstart = 25)
+k5 <- kmeans(data_scaled, centers = 5, nstart = 25)
+
+
+p1 <- fviz_cluster(k2, geom = "point", data = data_scaled) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = data_scaled) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = data_scaled) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = data_scaled) + ggtitle("k = 5")
+
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+
+
+```
+
+Now we will examine the characteristics of the 4 cluster solution and try to get a sense of the neighborhood 'types' we've created. With your partner, take 5 minutes to study the characteristics and come up with names for these different types of neighborhoods.
+
+```{r Examine Neighborhood Typologies}
+
+cltclusters<- cltdata %>%
+  mutate(cluster4 = k4$cluster) %>%
+  group_by(cluster4) %>%
+  summarise_all("mean") %>%
+  select(-c("name10"))
+kable(x=cltclusters)%>%kable_classic()
+
+```
+
+The last step is to join the cluster assignments back to the shapefile so we can map it and link it to the real estate listing data.
+
+```{r Map Cluster Assignment}
+cltdata <- cltdata %>%
+  mutate(cluster4 = k4$cluster)
+cltdata$name10<-as.character(as.numeric(cltdata$name10))
+joined<-left_join(clt_tracts, cltdata)
+clustermap <- tm_shape(joined)+tm_polygons(col = "cluster4", style="cat", palette = "cat")
+clustermap
+```
+
+Now to begin the text analysis! We'll begin by reading in a file of geocoded property listings in a shapefile format and reprojecting it so that it has the same coordinate system as the census tracts so that they can be spatially overlaid which we do with a spatial join.
+
+```{r read in the zillow}
+zillow<- st_read('zillow.shp') %>% st_transform(., crs = st_crs(joined)) %>% st_join(., joined)
+```
+
+Scrub a dub dub. It is time to clean the text. In reality, we did a lot more cleaning than this and came up with some more efficient ways of doing things, but this just gives you a sense of the times of editing you might need to do when working on a project like this.
+First, because the simplest type of text analysis treats each word as its own variable, independent of what words come before and after (bag of words model), we put together some interesting co-occurring that we want treated as a single observation. Other ways to figure this out would be to model bi-grams (frequently co-occurring words). Even fancier would be to use something called word embeddings which learns about the context of certain words.
+
+Next, we get rid of punctuation.
+
+The next long section replaces specific neighborhood names with a generic 'neighborhoodname' placeholder. This is the clunky way we did it initially, constructing the list as we went. Later, this entire cleaning process became much more streamlined. I included a masterclean script that we now use to see a more efficient way of doing these things. Nonetheless, we still had to hire a research assistant to create the csv files with all possible neighborhood names (and other terms)
+
+Then we create a list of terms we want to remove. In this case, they are things that are not particularly discriminating and commonly occur in most listings. They are also quirks we observed during this iterative process - the real list ended up being quite long! In later projects, we built csv files with lists of words and used those rather than this long list!
+
+Finally, we tokenize the words so that each becomes its own observation, remove common stopwords ("the", "and", etc.), numbers, along with the words from our remove word list.
+
+Lastly, we excluded terms that occured fewer than 5 times to try to get rid of noise.
+
+
+```{r Cleaning the text}
+
+##convert to lowercase
+zillow$USER_descr <- trimws(zillow$USER_descr)
+zillow$USER_descr <- tolower(zillow$USER_descr)
+
+##remove punctuation
+zillow$USER_descr<-gsub("(\\.+|[[:punct:]])", " \\1 ", zillow$USER_descr)
+
+##combine terms that would be useful to be treated together
+zillow$USER_descr<- gsub('light rail',"lightrail", zillow$USER_descr)
+zillow$USER_descr<- gsub('blue line',"blueline", zillow$USER_descr)
+zillow$USER_descr<- gsub('freedom park',"freedompark", zillow$USER_descr)
+zillow$USER_descr<- gsub('cul-de sac',"culdesac", zillow$USER_descr)
+zillow$USER_descr<- gsub('cul - de - sac',"culdesac", zillow$USER_descr)
+zillow$USER_descr<- gsub('multiple offers',"multipleoffers", zillow$USER_descr)
+zillow$USER_descr<- gsub('as is',"asis", zillow$USER_descr)
+zillow$USER_descr<- gsub('I-277',"I277", zillow$USER_descr)
+zillow$USER_descr<- gsub('stainless steel',"stainless", zillow$USER_descr)
+zillow$USER_descr<- gsub('FP',"fireplace", zillow$USER_descr)
+
+##replace specific neighborhood names with a 'neighborhoodname' placeholder
+zillow$USER_descr =gsub (pattern = "chantilly", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "villa", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "elizabeth", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "dilworth", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "southend", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "heights", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "plazamidwood", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "plaza", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "midwood", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "noda", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "providence", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "myserspark", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "university", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "plantation", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "arboretum", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "highland", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "myers", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "southpark", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "mallard", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "creek", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "ballantyne", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "grier", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "revolution", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "piper glen", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "beverly woods", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "enderly", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "college downs", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "biddleville", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "seversville", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "shamrock", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "montclaire", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "sardis", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "yorkmount", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "tryon hills", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "westerly hills", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "sugar", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "wendover", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "idlewild", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "mineral springs", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "selwyn", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "hickory", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "sheffield", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "belmont", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "hidden valley", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "newell", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "barclay", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "blakeney", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "carmel", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "cotswold", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "cherry", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "eastover", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "madison", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "quail hollow", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "sedgefield", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "starmount", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "steele creek", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "clanton", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "reid park", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "couldwood", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "enderly", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "lincoln", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "northwood", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "oakview", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "oakdale", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "wesley", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "wilmore", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "windsor", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "oakhurst", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "shannon", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "stonecrest", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "stonehaven", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "foxcroft", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "sherwood", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "lansdown", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "autumnwood", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "berewick", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "palisades", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "parkwood", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "oaklawn", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "ashley", replacement = "neighborhoodname", zillow$USER_descr)
+zillow$USER_descr =gsub (pattern = "smallwood", replacement = "neighborhoodname", zillow$USER_descr)
+
+remove_list <- (c("Condo", "CONDO", "Townhouse", "Townhome","Duplex", "Vacant Lot", "DUPLEX", "TOWNHOME", "TOWNHOUSE", "VACANT LOT", "condo", "townhouse", "townhome", "vacant lot", "duplex", "acres lot","is a single family home that contains", "rent", "#NAME?", "is a single family home. This home last sold for", "unit", "flat", "loft", "is a single family home. It contains", "lots","new","home","kitchen","great","throughout","master","bedroom","bathroom","bath","dining","living", "bedrooms","bathrooms","home","floor","floors","sq","sold","nc","ft","dr","built","location","features","lot","fenced", "kitchen", "bedroom", "bath", "appli", "halfbath", "tom"))
+
+words<- zillow %>% unnest_tokens(word, USER_descr) %>% anti_join(stop_words) %>% filter(!word %in% remove_list)%>% filter(!grepl('[0-9]', word))%>%filter(!cluster4 == 0)%>%st_drop_geometry(.)
+
+#Remove words that only occurs less than 5 times
+words$nn <- ave(words$word,words$word, FUN=length)
+words$nn <- as.numeric(words$nn)
+words<- words[ -which( words$nn <5), ]
+
+```
+
+Now we'll start the analysis, but you'll probably find yourself going back and back and back to the cleaning stage!
+
+
+We'll begin my simply looking at the most frequently occurring words in each neighborhood type. This is the default code that will produce something a little messy. We'll clean it up next.
+
+```{r words by neighborhood}
+words_by_neighborhood <- words %>%
+  count(cluster4, word, sort = TRUE) %>%
+  ungroup()
+
+words_by_neighborhood %>%
+  filter(n >= 25) %>% 
+  arrange(n) %>%
+  group_by(cluster4) %>%
+  top_n(25, n) %>%
+  ungroup() %>%
+  mutate(n = factor(word, unique(word))) %>%
+  ggplot(aes(word, n, fill = cluster4)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ cluster4, scales = "free", ncol = 3) +
+  coord_flip() +
+  labs(x = NULL, 
+       y = "Words by Cluster")
+```
+
+I spent a significant amount of my life trying to put those graphs in order (just so you don't think this code chunk pops out of my head on the first try)
+
+```{r ordered graphs}
+cluster.lab <- c('1'= "Increasing Minority Homebuyers", '2'="Wealthy White", '3'= "Very Wealthy and White", '4'= "Gentrifying")
+names <- factor(unique(words_by_neighborhood$cluster4))
+plist <- list()
+plist[]
+#tiff("wordsbyneighborhood.tiff", width = 11, height = 8, units = 'in', res = 600, compression = 'lzw') ##if you want to export a higher resolution figure
+
+for (i in 1:length(names)) {
+  d <- subset(words_by_neighborhood,cluster4 == names[i])
+  d <- subset(d, n>=5)
+  d <- head(d,20)
+  d$word <- factor(d$word, levels=d[order(d$n),]$word)
+  p1 <- ggplot(d, aes(x = word, y = n, fill = cluster4)) + 
+    labs(y = NULL, x = NULL, fill = NULL) +
+    geom_bar(stat = "identity") +
+    facet_wrap(~cluster4, scales = "free", labeller = as_labeller(cluster.lab)) +
+    coord_flip() +
+    guides(fill=FALSE) +
+    theme_bw() + theme( strip.background  = element_blank(),
+                        panel.grid.major = element_line(colour = "grey80"),
+                        panel.border = element_blank(),
+                        axis.ticks = element_line(size = 0),
+                        panel.grid.minor.y = element_blank(),
+                        panel.grid.major.y = element_blank() ) +
+    theme(legend.position="bottom") 
+  
+  
+  plist[[names[i]]] = p1
+}   
+
+do.call("grid.arrange", c(plist, ncol=3))
+#dev.off()
+```
+
+As we can see, the most common words appear most commonly across all groups. Term Frequency - Inverse Distance Frequency (tf_idf) is a way to overcome that so that commonly occurring words are given less weight.
+
+The results primarily show the names of specific neighborhoods located within those clusters.
+
+```{r tf_idf}
+
+cluster_tf_idf <- words_by_neighborhood %>%
+  bind_tf_idf(word, cluster4, n)
+
+cluster_tf_idf %>%
+  group_by(cluster4) %>%
+  slice_max(tf_idf, n = 10) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(word, tf_idf), fill = cluster4)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~cluster4, ncol = 2, scales = "free", labeller = as_labeller(cluster.lab)) +
+  labs(x = "tf-idf", y = NULL)
+```
+
+Another way to do this is with the now-familiar logistic regression. To simply things and help aid in the interpretation of the results, we turn this into a binomial regression where we'll compare one class to all of the rest. We first have to re-code our neighborhood class variable into a binomial one (1/0).
+
+We then split into a testing and training dataset
+```{r setup for logistic regression}
+
+#Make binomial variables for each cluster (could be put in an elegant loop but...)
+
+zillow<-st_drop_geometry(zillow)
+
+zillow$cluster1[zillow$cluster4!=1] <- 0    
+zillow$cluster1[zillow$cluster4==1] <- 1    
+words$cluster1[words$cluster4!=1] <- 0    
+words$cluster1[words$cluster4==1] <- 1
+zillow$cluster2[zillow$cluster4!=2] <- 0    
+zillow$cluster2[zillow$cluster4==2] <- 1    
+words$cluster2[words$cluster4!=2] <- 0    
+words$cluster2[words$cluster4==2] <- 1
+zillow$cluster3[zillow$cluster4!=3] <- 0    
+zillow$cluster3[zillow$cluster4==3] <- 1    
+words$cluster3[words$cluster4!=3] <- 0    
+words$cluster3[words$cluster4==3] <- 1
+zillow$cluster4b[zillow$cluster4!=4] <- 0    
+zillow$cluster4b[zillow$cluster4==4] <- 1    
+words$cluster4b[words$cluster4!=4] <- 0    
+words$cluster4b[words$cluster4==4] <- 1
+
+
+##split into testing and training dataset
+
+data_split<- zillow%>%select(USER_ID)
+data_split<- initial_split(data_split)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+
+#transform training data from tidy data structure to a sparse matrix
+sparse_words <- words %>%
+  count(USER_ID, word) %>%
+  inner_join(train_data) %>%
+  cast_sparse(USER_ID, word, n)
+
+class(sparse_words)
+dim(sparse_words)
+
+word_rownames <- as.integer(rownames(sparse_words))
+
+data_joined <- data_frame(USER_ID = word_rownames) %>%
+  left_join(zillow %>%
+              select(USER_ID, cluster1, cluster2, cluster3, cluster4b))
+
+
+```
+
+It is finally time to run the logistic regression. This code will work for one cluster at a time and graph the largest positive and negative words associated with each neighborhood type. Again, we see the importance of specific neighborhood names as most discriminating. To get more interesting keywords, we need to filter out these specific neighborhood names and replace them with a generic placeholder. You'll also notice some odd words that are likely misspellings pop up because they are rare and therefore highly discriminating of one neighborhood type. That's where the iterative cleaning comes into play - the influence of these rare words is also an artifact of having a relatively small sample of real estate listings used in this illustrative example. 
+
+We found a handy real estate dictionary that helped us get started in cleaning our much larger dataset that is very expensive and cannot be shared with you! But if you find yourself some money, and want to re-create the analysis on real MLS data check out: https://github.com/browak/Nowak-Price-Smith-JREFE-2019
+We ended up adding to those words with a full list of neighborhood names. I added that file to the github site for reference.
+
+
+```{r run logistic regression}
+#Run model on training data (slow) for clusterX
+
+is_cluster <- data_joined$cluster2 == 1 #<--- change clusterX to whatever cluster you want to plot
+
+model <- cv.glmnet(sparse_words, is_cluster,
+                   family = "binomial", intercept = TRUE
+                   #parallel = TRUE, keep = TRUE
+)
+
+#Pull out coefficients
+coefs <- model$glmnet.fit %>%
+  tidy() %>%
+  filter(lambda == model$lambda.min)
+
+#Plot coefficients 
+coefs %>%
+  group_by(estimate > 0) %>%
+  top_n(15, abs(estimate)) %>%
+  ungroup() %>%
+  ggplot(aes(fct_reorder(term, estimate), estimate, fill = estimate > 0)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  coord_flip() + theme(axis.text=element_text(size=11)) +
+  labs(
+    x = NULL,
+    title = "15 largest/smallest coefficients")
+```
+
+
+
+
+Now we can see how well we can predict the type of neighborhood a listing belongs to based on the coefficients of the words contained in the listing. Remember, since we converted it to a binary problem, we are testing one class at a time. In other words, is the listing in class 1? Yes or no, given what we've learned. We follow with our favorite confusion matrix. In this case, we are much better at predicting it DOESN'T belong to a certain class than identify the true class. Many more True Negatives than True Positives. We could also fiddle around with the 0.8 threshold to see how that alters the prediction results.
+
+```{r prediction}
+#Prediction 
+
+intercept <- coefs %>%
+  filter(term == "(Intercept)") %>%
+  pull(estimate)
+
+classifications <- words %>%
+  inner_join(test_data) %>%
+  inner_join(coefs, by = c("word" = "term")) %>%
+  group_by(USER_ID) %>%
+  summarize(score = sum(estimate)) %>%
+  mutate(probability = plogis(intercept + score))
+
+comment_classes <- classifications %>%
+  left_join(zillow %>%
+              select(cluster1, USER_ID), by = "USER_ID") %>% #change here to clusterX 
+  mutate(cluster1 = as.factor(cluster1)) #change here to clusterX 
+
+
+
+## Confusion matrix
+# at 0.8 threshold
+comment_classes %>%
+  mutate(
+    prediction = case_when(
+      probability > 0.8 ~ "1",
+      TRUE ~ "0"
+    ),
+    prediction = as.factor(prediction)
+  ) %>%
+  conf_mat(cluster1, prediction) #change here to clusterX 
+
+#accuracy = TN + TP / tot # of predictions
+#precision = TP / TP + FP
+#recall = TP / TP + FN
+```
+
